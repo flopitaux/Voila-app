@@ -333,7 +333,7 @@ private struct EmptyState: View {
                 .font(.voila(30))
                 .foregroundStyle(Theme.accent)
                 .symbolEffect(.bounce, value: hasDone)
-            Text(hasDone ? "Today is done!" : "Nothing for today")
+            Text(hasDone ? "All done for now!" : "Nothing for now")
                 .font(.voila(15, .semibold))
             Text(hasDone ? "Enjoy it ✨" : laterCount > 0 ? "Pull a task in from Later below." : "Add a task with +.")
                 .font(.voila(11))

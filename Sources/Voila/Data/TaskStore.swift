@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 import Observation
 
-/// The two statuses a task can have. Stored as the Google Tasks due date:
-/// Today = due today or earlier (overdue stays in Today); Later = no due date or a future one.
+/// The two statuses a task can have, shown as **Now** and **Later**. Stored as the Google Tasks due date:
+/// `.today` (Now) = due today or earlier (overdue stays in Now); `.later` = no due date or a future one.
 enum Bucket: Hashable {
     case today, later
 }

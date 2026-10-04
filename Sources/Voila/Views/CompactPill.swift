@@ -59,11 +59,11 @@ struct CompactPill: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(store.nextTask?.displayTitle ?? "Today is clear")
+                    Text(store.nextTask?.displayTitle ?? "All clear for now")
                         .font(.voila(12.5, .semibold))
                         .lineLimit(1)
-                    Text(store.nextTask == nil ? "Nothing left for today"
-                                               : "Up next · \(store.openCount) today")
+                    Text(store.nextTask == nil ? "Nothing left for now"
+                                               : "Up next · \(store.openCount) to do")
                         .font(.voila(11, .medium))
                         .foregroundStyle(.secondary)
                 }

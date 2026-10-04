@@ -110,7 +110,7 @@ struct TaskRow: View {
                 }
                 .buttonStyle(.plain)
                 .pointerStyle(.link)
-                .help(isToday ? "Move to Later" : "Move to Today")
+                .help(isToday ? "Move to Later" : "Move to Now")
             }
             Button(action: complete) {
                 Image(systemName: "checkmark")
@@ -214,7 +214,7 @@ struct TaskRow: View {
                             .font(.voila(10.5, .semibold))
                     }
                 }
-                if let due, due.urgency != .today {   // "Today" is implied by the Today view
+                if let due, due.urgency != .today {   // "Today" is implied by the Now section
                     Chip(text: due.text, systemImage: "calendar", tint: due.urgency.tint,
                          filled: due.urgency == .overdue)
                 }
@@ -245,7 +245,7 @@ struct TaskRow: View {
         Button("Mark as Done") { Task { await store.complete(task) } }
         Divider()
         if depth == 0 {
-            Button(store.bucket(of: task) == .today ? "Move to Later" : "Move to Today") {
+            Button(store.bucket(of: task) == .today ? "Move to Later" : "Move to Now") {
                 Task { await store.toggleBucket(task) }
             }
             Divider()
