@@ -142,28 +142,27 @@ private struct Header: View {
                 .fixedSize()
             }
 
-            TodayProgress(done: store.doneTodayCount, open: store.openCount)
+            TodayStats(done: store.doneTodayCount, open: store.openCount)
         }
     }
 }
 
-private struct TodayProgress: View {
+/// "2 done today · 3 left … 40%"
+private struct TodayStats: View {
     var done: Int
     var open: Int
 
     var body: some View {
         let total = done + open
         let fraction = total == 0 ? 0 : Double(done) / Double(total)
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(done == 0 ? "\(open) to do" : "\(done) done today · \(open) left")
-                Spacer()
-                Text(fraction, format: .percent.precision(.fractionLength(0)))
-                    .monospacedDigit()
-            }
-            .font(.voila(11, .medium))
-            .foregroundStyle(.secondary)
+        HStack {
+            Text(done == 0 ? "\(open) to do" : "\(done) done today · \(open) left")
+            Spacer()
+            Text(fraction, format: .percent.precision(.fractionLength(0)))
+                .monospacedDigit()
         }
+        .font(.voila(11, .medium))
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -260,6 +259,7 @@ struct FocusCard: View {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .pointerStyle(.link)
                     .offset(x: 5, y: -5)
                     .help("Hide focus card")
                 }
@@ -511,7 +511,7 @@ private struct AddTaskBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.92),
+        .background(Color(nsColor: .windowBackgroundColor),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .strokeBorder(Theme.tint.opacity(focused ? 0.45 : 0.15), lineWidth: 1))
@@ -565,7 +565,10 @@ enum QuickDate {
         case "tomorrow", "tom", "tmr": return cal.date(byAdding: .day, value: 1, to: today)
         case "week", "nextweek": return cal.date(byAdding: .day, value: 7, to: today)
         default:
+            // Fixed-format parsing must not depend on the user's locale or calendar.
             let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.calendar = Calendar(identifier: .gregorian)
             f.dateFormat = "yyyy-MM-dd"
             return f.date(from: word)
         }

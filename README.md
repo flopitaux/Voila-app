@@ -2,11 +2,11 @@
 
 *Start, focus, finish… voilà.*
 
-A native macOS floating panel for your **Google Tasks**: always on top, Liquid Glass, with start / pause / resume time tracking and a live progress ring against your estimate.
+A native macOS floating panel for your **Google Tasks**: always on top, with start / pause / resume time tracking and a live progress ring against your estimate.
 
 ## Features
 
-- **Always on top**: a floating glass panel visible on every Space and over full-screen apps. Drag it anywhere; it remembers its position and size.
+- **Always on top**: a floating panel visible on every Space and over full-screen apps. Drag it anywhere; it remembers its position and size.
 - **Standard macOS window**: real traffic lights, so you get the usual close, minimize (⌘M), zoom and the green button's tiling menu, plus a **Window** menu (Close ⌘W, Minimize, Zoom, Show Voilà ⌘0, Compact ⌘⇧C). Closing hides the panel but Voilà keeps running and timers keep counting. Click the **Dock icon** or the menu bar icon to bring it back. Voilà also shows in the Dock and ⌘-Tab.
 - **Compact pill**: collapse to a slim pill showing the running task, its live timer and progress (⤡ or ⌘⇧C to switch).
 - **Focus card**: start a task (▶). The card shows a live clock and a ring filling toward your estimate, with an orange overtime arc and a `+12m` chip once you go over.
@@ -20,7 +20,7 @@ A native macOS floating panel for your **Google Tasks**: always on top, Liquid G
 - **Click a task title**: a popover to set the estimate in one click (10m to 4h chips, or type a custom value like `1h20`), pick the **day** (Today, Tomorrow, the next weekdays, Next week, Someday, or any date from a calendar), rename the task, or reset its tracked time. A task set for a future day waits in Later and shows up in Today automatically on that day.
 - **Right-click a task**: start/pause, set an estimate or due date, reset tracked time, rename, delete.
 - **Show in Dock** (⋯ menu or menu bar icon): turn it off to remove Voilà from the Dock and ⌘-Tab. It keeps running and stays reachable from the menu bar icon.
-- **Menu bar icon** (☑︎ / ⏱ while running): show/close the panel (⌘T), compact, refresh, Launch at Login, sign out.
+- **Menu bar icon** (☑︎ / ⏱ while running): show/close the panel, compact, refresh, Launch at Login, sign out.
 
 ### Where the data lives
 

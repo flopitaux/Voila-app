@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Always-on-top glass window with the standard macOS title bar buttons (close, minimize, zoom/tile),
-/// floating over every Space and full-screen app.
+/// Always-on-top window with the standard macOS title bar buttons (close, minimize, zoom/tile),
+/// floating over every Space and full-screen app. The SwiftUI content draws its own opaque,
+/// rounded background, so the window itself is transparent.
 final class FloatingPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(contentRect: contentRect,
@@ -144,7 +145,7 @@ final class PanelController {
     }
 }
 
-/// Lets the user drag the borderless panel from any SwiftUI area that hosts this view.
+/// Lets the user drag the panel from empty areas of the SwiftUI content (the title bar is transparent).
 struct WindowDragArea: NSViewRepresentable {
     final class DragView: NSView {
         override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }

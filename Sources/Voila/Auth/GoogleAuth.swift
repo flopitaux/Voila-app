@@ -9,6 +9,7 @@ enum AuthError: LocalizedError {
     case denied(String)
     case noRefreshToken
     case notSignedIn
+    case timedOut
     case server(String)
 
     var errorDescription: String? {
@@ -18,6 +19,7 @@ enum AuthError: LocalizedError {
         case .denied(let reason): "Google sign-in was not completed (\(reason))."
         case .noRefreshToken: "Google didn't return a refresh token. Remove Voilà from your Google account's third-party access and try again."
         case .notSignedIn: "You're signed out. Connect your Google account again."
+        case .timedOut: "Sign-in took too long. Please try again."
         case .server(let message): message
         }
     }
@@ -84,15 +86,22 @@ final class GoogleAuth {
         isSigningIn = true
         defer { isSigningIn = false }
 
-        let server = try LoopbackServer()
-        self.server = server
-        defer { server.stop(); self.server = nil }
-
-        let port = try await server.start()
-        let redirectURI = "http://127.0.0.1:\(port)"
         let verifier = Self.randomURLSafe(byteCount: 32)
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncoded
         let state = Self.randomURLSafe(byteCount: 16)
+
+        let server = try LoopbackServer(expectedState: state)
+        self.server = server
+        defer { server.stop(); self.server = nil }
+        // Don't leave a local port listening forever if the browser flow is abandoned.
+        let timeout = Task { [server] in
+            try await Task.sleep(for: .seconds(300))
+            server.stop(reason: AuthError.timedOut)
+        }
+        defer { timeout.cancel() }
+
+        let port = try await server.start()
+        let redirectURI = "http://127.0.0.1:\(port)"
 
         var comps = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
         comps.queryItems = [
@@ -206,7 +215,9 @@ final class GoogleAuth {
 
     private static func randomURLSafe(byteCount: Int) -> String {
         var bytes = [UInt8](repeating: 0, count: byteCount)
-        _ = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
+        let status = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
+        // PKCE verifier and state must be unpredictable; never continue with zeroed bytes.
+        precondition(status == errSecSuccess, "Secure random generator failed (\(status))")
         return Data(bytes).base64URLEncoded
     }
 }

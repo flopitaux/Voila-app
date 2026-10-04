@@ -20,23 +20,23 @@ struct OnboardingView: View {
                 }
 
                 if !model.auth.isPreconfigured {
-                VStack(alignment: .leading, spacing: 8) {
-                    step(1, "Create a project at console.cloud.google.com and enable the **Google Tasks API**.")
-                    step(2, "Configure the OAuth consent screen (External, add yourself as a test user).")
-                    step(3, "Create an **OAuth client ID** of type **Desktop app**, then paste it below.")
-                    Link("Open Google Cloud Console →",
-                         destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
-                        .font(.voila(13, .semibold))
-                        .foregroundStyle(Theme.tint)
-                }
+                    VStack(alignment: .leading, spacing: 8) {
+                        step(1, "Create a project at console.cloud.google.com and enable the **Google Tasks API**.")
+                        step(2, "Configure the OAuth consent screen (External, add yourself as a test user).")
+                        step(3, "Create an **OAuth client ID** of type **Desktop app**, then paste it below.")
+                        Link("Open Google Cloud Console →",
+                             destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
+                            .font(.voila(13, .semibold))
+                            .foregroundStyle(Theme.tint)
+                    }
 
-                VStack(spacing: 8) {
-                    TextField("Client ID", text: $clientID)
-                    SecureField("Client secret", text: $clientSecret)
-                }
-                .textFieldStyle(.plain)
-                .padding(10)
-                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    VStack(spacing: 8) {
+                        TextField("Client ID", text: $clientID)
+                        SecureField("Client secret", text: $clientSecret)
+                    }
+                    .textFieldStyle(.plain)
+                    .padding(10)
+                    .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
 
                 if let error {
@@ -100,7 +100,7 @@ struct OnboardingView: View {
         Task {
             do {
                 try await model.auth.signIn()
-                model.startSync()
+                model.didSignIn()
             } catch is CancellationError {
             } catch {
                 self.error = error.localizedDescription

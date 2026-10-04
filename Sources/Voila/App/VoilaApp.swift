@@ -87,6 +87,13 @@ final class AppModel {
     func signOut() {
         refreshLoop?.cancel()
         auth.signOut()
+        store.reset()
+    }
+
+    /// After a successful sign-in: start fresh (it may be a different account) and sync.
+    func didSignIn() {
+        store.reset()
+        startSync()
     }
 
     func startAddingTask() {

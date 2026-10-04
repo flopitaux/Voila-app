@@ -2,13 +2,13 @@ import AppKit
 import Foundation
 import Observation
 
-/// A task shown in the open list, with its indentation depth (subtasks are depth 1).
 /// The two statuses a task can have. Stored as the Google Tasks due date:
 /// Today = due today or earlier (overdue stays in Today); Later = no due date or a future one.
 enum Bucket: Hashable {
     case today, later
 }
 
+/// A task shown in the open list, with its indentation depth (subtasks are depth 1).
 struct TaskRowItem: Identifiable {
     let task: GTask
     let depth: Int
@@ -29,7 +29,6 @@ final class TaskStore {
     /// The task shown in the focus card: running, or the last one paused (until completed or dismissed).
     private(set) var focusTask: GTask?
     private(set) var focusListID: String?
-
 
     /// Set briefly after completing a task, to drive the celebration.
     private(set) var celebration = 0
@@ -85,7 +84,7 @@ final class TaskStore {
         tasks.lazy.filter { !$0.isCompleted && self.bucket(of: $0) == bucket }.count
     }
 
-    /// Open tasks for today (drives the progress bar and the pill).
+    /// Open tasks for today (drives the header stats and the pill).
     var openCount: Int { count(in: .today) }
 
     var doneTodayCount: Int {
@@ -93,6 +92,17 @@ final class TaskStore {
     }
 
     var nextTask: GTask? { items(in: .today).first?.task }
+
+    /// Forgets everything cached for the current account (sign-out, or a different account signing in).
+    func reset() {
+        lists = []
+        tasks = []
+        selectedListID = nil
+        focusTask = nil
+        focusListID = nil
+        errorMessage = nil
+        for key in ["selectedListID", "focusRef"] { UserDefaults.standard.removeObject(forKey: key) }
+    }
 
     // MARK: - Loading
 

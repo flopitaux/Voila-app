@@ -2,7 +2,8 @@ import Foundation
 import Network
 
 /// One-shot HTTP server bound to 127.0.0.1 that captures the OAuth redirect
-/// (Google's recommended flow for desktop apps).
+/// (Google's recommended flow for desktop apps). Only a request carrying the expected `state`
+/// completes the flow, so other local processes can't abort or spoof the sign-in.
 final class LoopbackServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "Voila.loopback")
@@ -10,8 +11,10 @@ final class LoopbackServer: @unchecked Sendable {
     private var callbackContinuation: CheckedContinuation<[String: String], Error>?
     private var pendingResult: Result<[String: String], Error>?
     private var finished = false
+    private let expectedState: String
 
-    init() throws {
+    init(expectedState: String) throws {
+        self.expectedState = expectedState
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: params)
@@ -44,9 +47,10 @@ final class LoopbackServer: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    /// Stops listening; a pending `waitForCallback()` throws `reason`.
+    func stop(reason: Error = CancellationError()) {
         queue.async {
-            self.finish(.failure(CancellationError()))
+            self.finish(.failure(reason))
             self.listener.cancel()
         }
     }
@@ -91,7 +95,9 @@ final class LoopbackServer: @unchecked Sendable {
             if parts.count >= 2, let comps = URLComponents(string: "http://127.0.0.1" + parts[1]) {
                 for item in comps.queryItems ?? [] { params[item.name] = item.value ?? "" }
             }
-            let isCallback = params["code"] != nil || params["error"] != nil
+            // Ignore anything that isn't the redirect for *this* sign-in attempt.
+            let isCallback = (params["code"] != nil || params["error"] != nil)
+                && params["state"] == self.expectedState
             let body = isCallback ? Self.page(success: params["error"] == nil) : "Not found"
             let response = """
             HTTP/1.1 \(isCallback ? "200 OK" : "404 Not Found")\r

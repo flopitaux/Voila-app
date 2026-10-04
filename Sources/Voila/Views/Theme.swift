@@ -23,7 +23,7 @@ enum Theme {
     static let panelRadius: CGFloat = 26
 }
 
-/// Circular progress: gradient arc for time vs. estimate, orange arc on top once over time,
+/// Circular progress: gradient arc for time vs. estimate, amber arc on top once over time,
 /// a spinning arc when running without an estimate.
 struct ProgressRing: View {
     var progress: Double?

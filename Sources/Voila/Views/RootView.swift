@@ -27,7 +27,7 @@ struct RootView: View {
         .overlay(alignment: .top) { ErrorBanner() }
         .overlay { VoilaToast(trigger: model.store.celebration) }
         .animation(.smooth(duration: 0.3), value: model.showsTasks)
-        .ignoresSafeArea()   // draw under the transparent title bar; traffic lights sit on our glass
+        .ignoresSafeArea()   // draw under the transparent title bar; the traffic lights sit on our background
     }
 }
 
