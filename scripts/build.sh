@@ -26,6 +26,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$(swift build -c release "${ARCHS[@]}" --show-bin-path)/Voila" "$APP/Contents/MacOS/Voila"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+if [ ! -f build/AppIcon.icns ] && [ -f assets/logo/Voila.icns ]; then
+  mkdir -p build && cp assets/logo/Voila.icns build/AppIcon.icns
+fi
 if [ ! -f build/AppIcon.icns ]; then
   echo "▸ Rendering icon"
   ICONSET=build/AppIcon.iconset
