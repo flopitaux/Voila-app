@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy – Voilà</title>
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="brand" href="./"><img src="logo.svg" alt="">Voilà</a>
+      <nav>
+        <a href="./">Home</a>
+        <a href="terms.html">Terms</a>
+      </nav>
+    </header>
+
+    <article class="doc">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Effective October 4, 2026</p>
+
+      <p>Voilà (“the app”) is a macOS application, published by Francois Lopitaux (“we”), that displays and manages your Google Tasks. This policy explains what data the app accesses, how it is used and stored, and the choices you have.</p>
+
+      <div class="callout">
+        <strong>In short:</strong> Voilà runs on your Mac and talks only to Google. There is no Voilà server. We never receive, collect, sell or share your data, and there are no ads, analytics or trackers.
+      </div>
+
+      <h2>1. Data the app accesses</h2>
+      <p>When you choose “Connect Google Account”, Voilà asks Google for a single permission (OAuth scope):</p>
+      <ul>
+        <li><code>https://www.googleapis.com/auth/tasks</code>: view and manage your Google Tasks.</li>
+      </ul>
+      <p>With that permission the app can read and change your task lists and tasks: titles, notes, due dates, completion status, order and subtasks. It cannot access your email, contacts, calendar, files or any other Google data.</p>
+
+      <h2>2. How the data is used</h2>
+      <p>Your Google Tasks data is used only to provide the app's features you ask for:</p>
+      <ul>
+        <li>showing your tasks and lists in the app;</li>
+        <li>creating, renaming, completing, reopening, reordering, rescheduling and deleting tasks;</li>
+        <li>saving your time tracking (time spent, estimate, running timer) as a short line in the task's notes, for example <code>⏱ 42m / 1h</code>, so it syncs to your other devices through Google Tasks.</li>
+      </ul>
+      <p>No person reads your data, and it is not used for advertising, profiling, or training artificial-intelligence models.</p>
+
+      <h2>3. Where the data is stored</h2>
+      <ul>
+        <li><strong>Your tasks</strong> stay in your Google account. The app keeps a copy in memory only while it runs.</li>
+        <li><strong>Sign-in token:</strong> the OAuth refresh token is stored in the macOS Keychain on your Mac, restricted to that device.</li>
+        <li><strong>Preferences</strong> (window position and size, the selected list, the last focused task and its title, display settings) are stored locally in the app's macOS preferences.</li>
+      </ul>
+      <p>All communication goes directly from your Mac to Google's servers over encrypted HTTPS. The sign-in uses Google's recommended method for desktop apps (OAuth 2.0 with PKCE).</p>
+
+      <h2>4. Sharing and transfer</h2>
+      <p>We do not sell, rent, transfer or share your data with anyone. The only party the app communicates with is Google, to provide the features above.</p>
+
+      <h2>5. Google API Services User Data Policy</h2>
+      <p>Voilà's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+      <h2>6. Your choices: access and deletion</h2>
+      <ul>
+        <li><strong>Sign out:</strong> in Voilà, choose ⋯ → “Sign Out of Google”. This revokes the app's access and deletes the token and cached data from your Mac.</li>
+        <li><strong>Revoke access</strong> at any time from your Google Account: <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+        <li><strong>Remove the app:</strong> delete Voilà from your Applications folder. Its token is also removed when you sign out.</li>
+        <li><strong>Time-tracking lines</strong> in task notes are ordinary text in your Google Tasks; you can edit or delete them like any note.</li>
+      </ul>
+      <p>Your tasks themselves remain in your Google account and are governed by Google's own privacy policy.</p>
+
+      <h2>7. Children</h2>
+      <p>Voilà is not directed to children under 13 and does not knowingly collect data from them.</p>
+
+      <h2>8. Changes to this policy</h2>
+      <p>If this policy changes, the updated version will be published on this page with a new effective date.</p>
+
+      <h2>9. Contact</h2>
+      <p>Questions or requests about privacy: <a href="mailto:francois.lopitaux@gmail.com">francois.lopitaux@gmail.com</a>.</p>
+    </article>
+
+    <footer class="site">
+      <span>© 2026 Francois Lopitaux · Voilà is not affiliated with Google.</span>
+      <span><a href="./">Home</a> · <a href="terms.html">Terms of Service</a></span>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Voilà</title>
+  <defs>
+    <linearGradient id="body" x1="100" y1="100" x2="924" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6B8CB3"/>
+      <stop offset="1" stop-color="#73A69E"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="100" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Squircle body -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#body)" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#gloss)"/>
+  <!-- Progress ring: faint track + 75% arc from 12 o'clock -->
+  <circle cx="512" cy="512" r="250" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="56"/>
+  <path d="M512 262 A250 250 0 1 1 262 512" fill="none" stroke="#FFFFFF" stroke-width="56" stroke-linecap="round"/>
+  <!-- Checkmark -->
+  <path d="M397 507 L482 597 L637 417" fill="none" stroke="#FFFFFF" stroke-width="64"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

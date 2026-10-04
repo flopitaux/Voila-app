@@ -4,3 +4,4 @@ build/
 GoogleOAuthClient.json
 client_secret*.json
 dist/
+.claude/

@@ -103,3 +103,7 @@ Sources/Voila/
   Views/  MainView, TaskRow, CompactPill, OnboardingView, RootView, Theme
 scripts/  build.sh, release.sh, make_icon.swift
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 Francois Lopitaux
