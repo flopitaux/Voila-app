@@ -1,16 +1,29 @@
 #!/bin/bash
-# Builds Voilà.app into ./build. Pass --install to copy it to ~/Applications and launch it.
+# Builds Voilà.app into ./build.
+#   --install  copy it to ~/Applications and launch it
+#   --release  universal binary (Apple Silicon + Intel) signed with a secure timestamp (for distribution)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+INSTALL=0; RELEASE=0
+for arg in "$@"; do
+  case "$arg" in
+    --install) INSTALL=1 ;;
+    --release) RELEASE=1 ;;
+    *) echo "Unknown option: $arg" >&2; exit 1 ;;
+  esac
+done
+
+if [ $RELEASE = 1 ]; then ARCHS=(--arch arm64 --arch x86_64); else ARCHS=(--arch arm64); fi
+
 APP="build/Voilà.app"
-echo "▸ Compiling (release)…"
-swift build -c release --arch arm64
+echo "▸ Compiling (release, ${ARCHS[*]})…"
+swift build -c release "${ARCHS[@]}"
 
 echo "▸ Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release --arch arm64 --show-bin-path)/Voila" "$APP/Contents/MacOS/Voila"
+cp "$(swift build -c release "${ARCHS[@]}" --show-bin-path)/Voila" "$APP/Contents/MacOS/Voila"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 if [ ! -f build/AppIcon.icns ]; then
@@ -45,9 +58,15 @@ fi
 # Prefer a real signing identity (keeps Keychain access stable across rebuilds); fall back to ad-hoc.
 IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application|Apple Development/ {print $2; exit}')}"
 echo "▸ Signing with: ${IDENTITY:-ad-hoc}"
-codesign --force --options runtime --timestamp=none --sign "${IDENTITY:--}" "$APP"
+if [ $RELEASE = 1 ]; then
+  [[ "$IDENTITY" == Developer\ ID\ Application* ]] || { echo "A Developer ID Application identity is required for --release" >&2; exit 1; }
+  TIMESTAMP=(--timestamp)          # secure timestamp: required for notarization
+else
+  TIMESTAMP=(--timestamp=none)     # fast local builds
+fi
+codesign --force --options runtime "${TIMESTAMP[@]}" --sign "${IDENTITY:--}" "$APP"
 
-if [ "${1:-}" = "--install" ]; then
+if [ $INSTALL = 1 ]; then
   mkdir -p ~/Applications
   pkill -x Voila 2>/dev/null || true
   rm -rf ~/Applications/Voila.app ~/Applications/Voilà.app

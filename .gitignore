@@ -3,3 +3,4 @@ build/
 .DS_Store
 GoogleOAuthClient.json
 client_secret*.json
+dist/

@@ -77,6 +77,22 @@ swift build && VOILA_DEMO=1 .build/debug/Voila
 
 `VOILA_DEMO=1` (debug builds only) shows sample tasks without a Google account.
 
+## Release (DMG)
+
+```bash
+./scripts/release.sh
+```
+
+This produces `dist/Voila-<version>.dmg`: a universal (Apple Silicon + Intel) app signed with your Developer ID and a secure timestamp, plus a drag-to-Applications layout. The version comes from `Resources/Info.plist` (`CFBundleShortVersionString` / `CFBundleVersion`).
+
+To share it with other Macs without Gatekeeper warnings, notarize it. Store your credentials once:
+
+```bash
+xcrun notarytool store-credentials voila-notary --apple-id <you@example.com> --team-id 8LDY3JKFJX
+```
+
+Then build with `NOTARY_PROFILE=voila-notary ./scripts/release.sh`, which notarizes and staples the DMG.
+
 ## Project layout
 
 ```
@@ -85,5 +101,5 @@ Sources/Voila/
   Auth/   GoogleAuth.swift (OAuth + PKCE), LoopbackServer.swift (redirect catcher), Keychain.swift
   Data/   TasksAPI.swift (REST client), TaskStore.swift (state + actions), TimeTracking.swift (notes codec)
   Views/  MainView, TaskRow, CompactPill, OnboardingView, RootView, Theme
-scripts/  build.sh, make_icon.swift
+scripts/  build.sh, release.sh, make_icon.swift
 ```
