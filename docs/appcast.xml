@@ -5,5 +5,16 @@
     <link>https://flopitaux.github.io/Voila-app/appcast.xml</link>
     <description>Voilà updates</description>
     <language>en</language>
+    <item>
+      <title>Version 1.1</title>
+      <pubDate>Wed, 07 Oct 2026 17:10:18 GMT</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>Signed with Developer ID and notarized by Apple: open the DMG and drag <strong>Voilà</strong> to <strong>Applications</strong>. Requires macOS 26 or later (Apple Silicon or Intel).</p>
+<p>SHA-256 <code class="notranslate">15bd550098deb7e6d5599d0251971a6a9ae6bd6120408d62534609e336d2c557</code></p>
+<p>See the <a href="https://github.com/flopitaux/Voila-app/commits/v1.1">commit history</a> for changes.</p>]]></description>
+      <enclosure url="https://github.com/flopitaux/Voila-app/releases/download/v1.1/Voila-1.1.dmg" type="application/octet-stream" sparkle:edSignature="O7yyicp4eXOvD00zC6mmko/REtKr1MM3N1ish25vjpIH6SJsI8mwqPL1xDV3jYui5stIhlrkMAWr1R7/NyfPAg==" length="6244818"/>
+    </item>
   </channel>
 </rss>
