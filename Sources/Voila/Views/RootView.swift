@@ -8,9 +8,11 @@ struct RootView: View {
         ZStack {
             if !model.showsTasks {
                 OnboardingView()
+                    .background(WindowDragArea())
                     .transition(.opacity)
             } else if model.isCompact {
                 CompactPill()
+                    .background(WindowDragArea())
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 MainView()
@@ -19,11 +21,10 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .font(.voila(13))
-        .background(WindowDragArea())
         // Fully opaque: whatever is behind the panel never shows through, in any window state.
         .background(Color(nsColor: .windowBackgroundColor), in: shape)
         .clipShape(shape)
-        .overlay(shape.strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .overlay(shape.strokeBorder(.primary.opacity(0.12), lineWidth: 1))
         .overlay(alignment: .top) { ErrorBanner() }
         .overlay { VoilaToast(trigger: model.store.celebration) }
         .animation(.smooth(duration: 0.3), value: model.showsTasks)
@@ -64,7 +65,7 @@ private struct VoilaToast: View {
 
     var body: some View {
         Text("Voilà\u{202F}!")
-            .font(.voila(22, .heavy))
+            .font(.voila(22, .bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 22)
             .padding(.vertical, 10)

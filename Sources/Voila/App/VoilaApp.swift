@@ -3,12 +3,33 @@ import Observation
 import ServiceManagement
 import SwiftUI
 
+/// Light/dark appearance: follow the Mac setting, or force one.
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: "Match System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil   // follows System Settings → Appearance, live
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AppModel {
     static let shared = AppModel()
 
     let auth = GoogleAuth()
+    let updater = Updater()
     let store: TaskStore
     private(set) var isCompact = UserDefaults.standard.bool(forKey: "compact")
     /// Whether the add-task field is expanded (otherwise only the + button shows).
@@ -19,6 +40,7 @@ final class AppModel {
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// Off = no Dock icon / ⌘-Tab entry; Voilà stays reachable from the menu bar icon.
     private(set) var showInDock = !UserDefaults.standard.bool(forKey: "hideDockIcon")
+    private(set) var appearance = AppearanceMode(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system
     #if DEBUG
     let isDemo = ProcessInfo.processInfo.environment["VOILA_DEMO"] == "1"
     #else
@@ -45,6 +67,8 @@ final class AppModel {
     }
 
     func launch() {
+        if !isDemo { updater.start() }
+        NSApp.appearance = appearance.nsAppearance
         clockTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.clock = Date() }
         }
@@ -122,6 +146,12 @@ final class AppModel {
 
     /// Sends the panel to the Dock.
     func minimizePanel() { panel?.minimize() }
+
+    func setAppearance(_ mode: AppearanceMode) {
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "appearance")
+        NSApp.appearance = mode.nsAppearance
+    }
 
     func setShowInDock(_ show: Bool) {
         showInDock = show
@@ -237,11 +267,29 @@ private struct MenuBarContent: View {
                                                set: { model.setLaunchAtLogin($0) }))
         Toggle("Show in Dock", isOn: Binding(get: { model.showInDock },
                                             set: { model.setShowInDock($0) }))
+        AppearancePicker()
         if model.auth.isSignedIn {
             Button("Sign Out of Google") { model.signOut() }
         }
         Divider()
+        if model.updater.isAvailable {
+            Button("Check for Updates…") { model.updater.checkForUpdates() }
+                .disabled(!model.updater.canCheckForUpdates)
+        }
         Button("Quit Voilà") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+}
+
+/// "Appearance ▸ Match System / Light / Dark" submenu, used in the menu bar and ⋯ menus.
+struct AppearancePicker: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Picker("Appearance", selection: Binding(get: { model.appearance }, set: { model.setAppearance($0) })) {
+            ForEach(AppearanceMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
     }
 }

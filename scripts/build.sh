@@ -23,7 +23,11 @@ swift build -c release "${ARCHS[@]}"
 echo "▸ Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release "${ARCHS[@]}" --show-bin-path)/Voila" "$APP/Contents/MacOS/Voila"
+BIN="$(swift build -c release "${ARCHS[@]}" --show-bin-path)"
+cp "$BIN/Voila" "$APP/Contents/MacOS/Voila"
+# Sparkle (auto-updates) is loaded from Contents/Frameworks (rpath @executable_path/../Frameworks).
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 if [ ! -f build/AppIcon.icns ] && [ -f assets/logo/Voila.icns ]; then
@@ -67,7 +71,15 @@ if [ $RELEASE = 1 ]; then
 else
   TIMESTAMP=(--timestamp=none)     # fast local builds
 fi
-codesign --force --options runtime "${TIMESTAMP[@]}" --sign "${IDENTITY:--}" "$APP"
+# Sign inside-out: Sparkle's helpers, the framework, then the app.
+SIGN=(codesign --force --options runtime "${TIMESTAMP[@]}" --sign "${IDENTITY:--}")
+FW="$APP/Contents/Frameworks/Sparkle.framework"
+"${SIGN[@]}" "$FW/Versions/B/XPCServices/Installer.xpc"
+"${SIGN[@]}" --preserve-metadata=entitlements "$FW/Versions/B/XPCServices/Downloader.xpc"
+"${SIGN[@]}" "$FW/Versions/B/Autoupdate"
+"${SIGN[@]}" "$FW/Versions/B/Updater.app"
+"${SIGN[@]}" "$FW"
+"${SIGN[@]}" "$APP"
 
 if [ $INSTALL = 1 ]; then
   mkdir -p ~/Applications

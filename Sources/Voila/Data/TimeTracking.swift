@@ -1,17 +1,21 @@
 import Foundation
 
-/// Time tracking for a task. Persisted as a single line in the Google Task notes:
+/// Voilà's per-task state (time tracking + Now). Persisted as a single line in the Google Task notes:
 ///
-///     ⏱ 42m10s / 1h ▶ 2026-10-03T16:02:11Z
+///     ⏱ 42m10s / 1h ▶ 2026-10-03T16:02:11Z · now
+///     ⏱ now
 ///
-/// `42m10s` = time already spent, `1h` = estimate, `▶ <date>` = running since.
+/// `42m10s` = time already spent, `1h` = estimate, `▶ <date>` = running since,
+/// `now` = the task is in Now (actively worked on), independent of its due date.
 struct TrackInfo: Equatable {
     var spent: TimeInterval = 0
     var estimate: TimeInterval?
     var runningSince: Date?
+    var isNow = false
 
     var isRunning: Bool { runningSince != nil }
-    var isEmpty: Bool { spent < 1 && estimate == nil && runningSince == nil }
+    var hasTime: Bool { spent >= 1 || estimate != nil || runningSince != nil }
+    var isEmpty: Bool { !hasTime && !isNow }
 
     func elapsed(at now: Date = .now) -> TimeInterval {
         spent + (runningSince.map { max(0, now.timeIntervalSince($0)) } ?? 0)
@@ -24,12 +28,13 @@ struct TrackInfo: Equatable {
 
     /// Folds the running segment into `spent` and stops the clock.
     func paused(at now: Date = .now) -> TrackInfo {
-        TrackInfo(spent: elapsed(at: now).rounded(), estimate: estimate, runningSince: nil)
+        TrackInfo(spent: elapsed(at: now).rounded(), estimate: estimate, runningSince: nil, isNow: isNow)
     }
 }
 
 enum NotesCodec {
     static let marker = "⏱"
+    static let nowFlag = "now"
 
     static func parse(_ notes: String?) -> (body: String, track: TrackInfo) {
         guard let notes, !notes.isEmpty else { return ("", TrackInfo()) }
@@ -45,9 +50,15 @@ enum NotesCodec {
     static func compose(body: String, track: TrackInfo) -> String {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !track.isEmpty else { return body }
-        var line = "\(marker) \(DurationFormat.compact(track.spent))"
-        if let estimate = track.estimate { line += " / \(DurationFormat.compact(estimate))" }
-        if let since = track.runningSince { line += " ▶ \(ISO8601.format(since))" }
+        var parts: [String] = []
+        if track.hasTime {
+            var time = DurationFormat.compact(track.spent)
+            if let estimate = track.estimate { time += " / \(DurationFormat.compact(estimate))" }
+            if let since = track.runningSince { time += " ▶ \(ISO8601.format(since))" }
+            parts.append(time)
+        }
+        if track.isNow { parts.append(nowFlag) }
+        let line = "\(marker) " + parts.joined(separator: " · ")
         return body.isEmpty ? line : "\(body)\n\n\(line)"
     }
 
@@ -55,6 +66,14 @@ enum NotesCodec {
         var rest = line.trimmingCharacters(in: .whitespaces).dropFirst(marker.count)
             .trimmingCharacters(in: .whitespaces)
         var track = TrackInfo()
+        // Trailing flags: "… · now" (or just "now" when there's no time yet).
+        var segments = rest.components(separatedBy: "·").map { $0.trimmingCharacters(in: .whitespaces) }
+        if segments.last?.lowercased() == nowFlag {
+            track.isNow = true
+            segments.removeLast()
+        }
+        rest = segments.joined(separator: "·").trimmingCharacters(in: .whitespaces)
+        guard !rest.isEmpty else { return track }
         if let r = rest.range(of: "▶") {
             track.runningSince = ISO8601.parse(rest[r.upperBound...].trimmingCharacters(in: .whitespaces))
             rest = rest[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
@@ -143,7 +162,7 @@ enum DueDate {
         case -1: return ("Yesterday", .overdue)
         case 0: return ("Today", .today)
         case 1: return ("Tomorrow", .soon)
-        case 2..<7: return (date.formatted(.dateTime.weekday(.wide)), .later)
+        case 2..<7: return (date.formatted(.dateTime.weekday(.abbreviated)), .later)
         default: return (date.formatted(.dateTime.month(.abbreviated).day()), .later)
         }
     }

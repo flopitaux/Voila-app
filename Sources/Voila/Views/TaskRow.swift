@@ -4,6 +4,8 @@ struct TaskRow: View {
     @Environment(AppModel.self) private var model
     var task: GTask
     var depth: Int
+    /// Position in its section: cards alternate between a soft blue and a soft sage tint.
+    var index: Int = 0
 
     @State private var hovering = false
     @State private var checking = false
@@ -14,16 +16,30 @@ struct TaskRow: View {
     @State private var circleHovering = false
     @State private var showQuickEdit = false
     @State private var titleHovering = false
+    /// Widths used to detect a cut-off title (shown in full in a hover bubble).
+    @State private var titleWidth: CGFloat = 0
+    @State private var fullTitleWidth: CGFloat = 0
+    @State private var showFullTitle = false
+    @State private var cardHeight: CGFloat = 44
+    private var titleIsTruncated: Bool { fullTitleWidth > titleWidth + 0.5 }
     @FocusState private var editorFocused: Bool
 
     private var store: TaskStore { model.store }
+
+    private var isLater: Bool { store.bucket(of: task) == .later }
+    /// Card background strength: Later is flatter; hover lifts the card a little.
+    private var cardFill: Color {
+        let base = index.isMultiple(of: 2) ? Theme.tint : Theme.tint2
+        return base.opacity((isLater ? 0.06 : 0.10) + (hovering ? 0.04 : 0))
+    }
 
     var body: some View {
         let track = task.track
         HStack(alignment: .center, spacing: 10) {
             startButton(track)
 
-            VStack(alignment: .leading, spacing: 4) {
+            // One line: title on the left (truncated with …), details right-aligned.
+            Group {
                 if editing {
                     TextField("Task", text: $draft)
                         .textFieldStyle(.plain)
@@ -32,36 +48,66 @@ struct TaskRow: View {
                         .onExitCommand { editing = false }
                         .onChange(of: editorFocused) { if !editorFocused { commitEdit() } }
                 } else {
-                    // Click the title to set the estimate (and rename) in a popover.
+                    // Click the title to set the estimate, due date or rename in a popover.
                     Text(task.displayTitle)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .strikethrough(checking, color: .secondary)
                         .foregroundStyle(checking ? .secondary : .primary)
                         .underline(titleHovering && !checking, color: .secondary.opacity(0.5))
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { titleWidth = $0 }
+                        .background(alignment: .leading) {
+                            // Invisible full-width copy to know whether the visible title is cut off.
+                            Text(task.displayTitle)
+                                .fixedSize()
+                                .hidden()
+                                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { fullTitleWidth = $0 }
+                        }
                         .contentShape(Rectangle())
-                        .onTapGesture { showQuickEdit = true }
+                        .onTapGesture { showQuickEdit = true; showFullTitle = false }
                         .onHover { titleHovering = $0 }
                         .pointerStyle(.link)
-                        .help("Set estimate or rename")
+                        .task(id: titleHovering) {
+                            // macOS tooltips don't show while Voilà isn't the active app, so cut-off
+                            // titles get their own bubble after a short hover.
+                            if titleHovering && titleIsTruncated {
+                                try? await Task.sleep(for: .milliseconds(450))
+                                if !Task.isCancelled { withAnimation(.easeOut(duration: 0.15)) { showFullTitle = true } }
+                            } else {
+                                withAnimation(.easeOut(duration: 0.1)) { showFullTitle = false }
+                            }
+                        }
                         .popover(isPresented: $showQuickEdit, arrowEdge: .bottom) {
                             TaskQuickEdit(task: task) { showQuickEdit = false }
                                 .environment(model)
                         }
                 }
-                meta(track)
             }
-            .font(.voila(13.5, .medium))
+            .font(.voila(13.5))
+            .layoutPriority(0)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+
+            // Details give way to the hover actions, which appear in the same spot.
+            meta(track)
+                .fixedSize()
+                .layoutPriority(1)
+                .opacity(hovering && !editing ? 0 : 1)
         }
         .frame(minHeight: 26)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .padding(.leading, CGFloat(depth) * 22)
+        .opacity(isLater && !hovering ? 0.8 : 1)
+        // Card: each task stands on its own. Now cards are raised, the running one is tinted,
+        // Later cards are flatter.
         .background {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(track.isRunning ? AnyShapeStyle(Theme.tint.opacity(0.10))
-                                      : AnyShapeStyle(.primary.opacity(hovering ? 0.06 : 0)))
+            let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            shape
+                .fill(track.isRunning ? AnyShapeStyle(Theme.tint.opacity(0.16))
+                                      : AnyShapeStyle(cardFill))
+                .overlay(shape.strokeBorder(track.isRunning ? AnyShapeStyle(Theme.tint.opacity(0.45))
+                                                           : AnyShapeStyle(.primary.opacity(0.07))))
+                .shadow(color: .black.opacity(isLater ? 0 : 0.18), radius: 3, y: 1)
         }
         .contentShape(Rectangle())
         // Hover actions float over the end of the row, so titles keep the full width
@@ -71,7 +117,7 @@ struct TaskRow: View {
         }
         .overlay(alignment: .top) {
             if dropTargeted {
-                Capsule().fill(Theme.accent).frame(height: 2.5).offset(y: -2).padding(.horizontal, 6)
+                Capsule().fill(Theme.accent).frame(height: 2.5).offset(y: -4.5).padding(.horizontal, 6)
             }
         }
         .draggable(task.id) {
@@ -89,20 +135,41 @@ struct TaskRow: View {
         }
         .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
         .contextMenu { menu(track) }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { cardHeight = $0 }
+        // Full-title bubble just below the card, above neighbouring cards.
+        .overlay(alignment: .topLeading) {
+            if showFullTitle && !editing && !showQuickEdit {
+                Text(task.displayTitle)
+                    .font(.voila(12.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.primary.opacity(0.12)))
+                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+                    .padding(.leading, 40)
+                    .padding(.trailing, 8)
+                    .offset(y: cardHeight + 4)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .zIndex(showFullTitle ? 10 : 0)
+        .padding(.leading, CGFloat(depth) * 22)   // subtask cards are indented
     }
 
     // MARK: - Pieces
 
     private func hoverActions(_ track: TrackInfo) -> some View {
         HStack(spacing: 4) {
-            // One-click Today ⇄ Later (top-level tasks; subtasks follow their parent).
-            if depth == 0 {
-                let isToday = store.bucket(of: task) == .today
+            // One click to bring a Later task into Now (top-level tasks; subtasks follow their parent).
+            // Sending a Now task back to Later is via drag or right-click, keeping Now cards clean.
+            if depth == 0 && isLater {
                 Button {
-                    Task { await store.toggleBucket(task) }
+                    Task { await store.setNow(true, for: task) }
                 } label: {
-                    Image(systemName: isToday ? "moon" : "sun.max")
-                        .font(.voila(11, .semibold))
+                    Image(systemName: "sun.max")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 26, height: 26)
                         .background(.primary.opacity(0.08), in: Circle())
@@ -110,11 +177,11 @@ struct TaskRow: View {
                 }
                 .buttonStyle(.plain)
                 .pointerStyle(.link)
-                .help(isToday ? "Move to Later" : "Move to Now")
+                .help("Move to Now")
             }
             Button(action: complete) {
                 Image(systemName: "checkmark")
-                    .font(.voila(11, .heavy))
+                    .font(.voila(11, .bold))
                     .foregroundStyle(.white)
                     .frame(width: 26, height: 26)
                     .background(Theme.done, in: Circle())
@@ -214,7 +281,7 @@ struct TaskRow: View {
                             .font(.voila(10.5, .semibold))
                     }
                 }
-                if let due, due.urgency != .today {   // "Today" is implied by the Now section
+                if let due {
                     Chip(text: due.text, systemImage: "calendar", tint: due.urgency.tint,
                          filled: due.urgency == .overdue)
                 }
@@ -245,7 +312,7 @@ struct TaskRow: View {
         Button("Mark as Done") { Task { await store.complete(task) } }
         Divider()
         if depth == 0 {
-            Button(store.bucket(of: task) == .today ? "Move to Later" : "Move to Now") {
+            Button(store.bucket(of: task) == .now ? "Move to Later" : "Move to Now") {
                 Task { await store.toggleBucket(task) }
             }
             Divider()

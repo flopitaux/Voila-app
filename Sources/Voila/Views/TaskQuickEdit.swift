@@ -110,7 +110,7 @@ struct TaskQuickEdit: View {
     private struct DayOption: Identifiable {
         let id: String
         let label: String
-        let date: Date?   // nil = Someday (no due date → Later)
+        let date: Date?   // nil = no due date
     }
 
     private var dayOptions: [DayOption] {
@@ -123,7 +123,7 @@ struct TaskQuickEdit: View {
             options.append(DayOption(id: "d\(n)", label: day(n).formatted(.dateTime.weekday(.abbreviated)), date: day(n)))
         }
         options.append(DayOption(id: "week", label: "Next wk", date: day(7)))
-        options.append(DayOption(id: "someday", label: "Someday", date: nil))
+        options.append(DayOption(id: "2weeks", label: "In 2 wks", date: day(14)))
         return options
     }
 
@@ -132,13 +132,21 @@ struct TaskQuickEdit: View {
         let cal = Calendar.current
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Day", systemImage: "calendar")
+                Label("Due date", systemImage: "calendar")
                     .font(.voila(11, .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(due.map { DueDate.label(for: $0).text } ?? "Someday")
+                Text(due.map { DueDate.label(for: $0).text } ?? "None")
                     .font(.voila(11, .medium))
                     .foregroundStyle(due.map { DueDate.label(for: $0).urgency.tint } ?? .secondary)
+                if due != nil {
+                    Button("Remove") { setDay(nil) }
+                        .buttonStyle(.plain)
+                        .font(.voila(11, .medium))
+                        .foregroundStyle(.secondary)
+                        .pointerStyle(.link)
+                        .help("Remove the due date")
+                }
             }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
@@ -194,7 +202,7 @@ struct TaskQuickEdit: View {
         }
     }
 
-    /// Today/past dates show in Today; future dates sit in Later until that day arrives.
+    /// Sets the deadline only; Now / Later is chosen separately.
     private func setDay(_ date: Date?) {
         saveTitle()
         let target = liveTask

@@ -1,10 +1,11 @@
 import SwiftUI
 
 extension Font {
-    /// Voilà's typeface: Avenir Next, slightly enlarged because it draws smaller than SF Pro.
-    /// Falls back to the system font automatically if Avenir Next is unavailable.
+    /// Voilà's typeface: Helvetica Neue. Weights are capped at bold so text stays refined
+    /// (heavy weights look chunky). Falls back to the system font if Helvetica Neue is unavailable.
     static func voila(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom("Avenir Next", size: size * 1.05).weight(weight)
+        let refined: Font.Weight = (weight == .heavy || weight == .black) ? .bold : weight
+        return .custom("Helvetica Neue", size: size).weight(refined)
     }
 }
 

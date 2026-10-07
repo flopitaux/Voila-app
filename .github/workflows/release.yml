@@ -10,6 +10,10 @@
 #   NOTARY_API_KEY_ID              its Key ID
 #   NOTARY_API_ISSUER_ID           its Issuer ID
 #   GOOGLE_OAUTH_CLIENT_JSON       contents of GoogleOAuthClient.json (Desktop OAuth client)
+#   SPARKLE_PRIVATE_KEY            Sparkle EdDSA private key (from `generate_keys -x`), signs updates
+#
+# Each release also adds an entry to docs/appcast.xml on main (the Sparkle auto-update feed served
+# at https://flopitaux.github.io/Voila-app/appcast.xml). Bump CFBundleVersion for every release.
 name: Release
 
 on:
@@ -49,9 +53,10 @@ jobs:
           KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
           ISSUER: ${{ secrets.NOTARY_API_ISSUER_ID }}
           OAUTH: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+          SPARKLE: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           missing=0
-          for name in P12 P12_PASSWORD KEY_P8 KEY_ID ISSUER OAUTH; do
+          for name in P12 P12_PASSWORD KEY_P8 KEY_ID ISSUER OAUTH SPARKLE; do
             if [ -z "${!name}" ]; then echo "::error::Missing secret for $name"; missing=1; fi
           done
           exit $missing
@@ -59,7 +64,9 @@ jobs:
       - name: Check that the tag matches the app version
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" Resources/Info.plist)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
           if [ "v$VERSION" != "$TAG" ]; then
             echo "::error::Tag $TAG doesn't match CFBundleShortVersionString $VERSION in Resources/Info.plist"
             exit 1
@@ -111,6 +118,15 @@ jobs:
           xcrun stapler validate "$DMG"
           echo "SHA256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
+      - name: Sign the update for Sparkle
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          SIGNATURE=$(.build/artifacts/sparkle/Sparkle/bin/sign_update "dist/Voila-$VERSION.dmg" --ed-key-file "$RUNNER_TEMP/sparkle.key")
+          rm -f "$RUNNER_TEMP/sparkle.key"
+          echo "SPARKLE_SIGNATURE=$SIGNATURE" >> "$GITHUB_ENV"
+
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -126,6 +142,31 @@ jobs:
           fi
           echo "Published $DMG (SHA-256 $SHA256) to $TAG" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check out main to update the appcast
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: site
+
+      - name: Add this release to the appcast (auto-update feed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Release notes (Markdown on GitHub) → HTML for Sparkle's update window.
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          gh api markdown -f mode=gfm -f text="$(cat "$RUNNER_TEMP/notes.md")" > "$RUNNER_TEMP/notes.html"
+          python3 scripts/update_appcast.py site/docs/appcast.xml \
+            --version "$VERSION" --build "$BUILD" \
+            --url "https://github.com/${{ github.repository }}/releases/download/$TAG/Voila-$VERSION.dmg" \
+            --signature "$SPARKLE_SIGNATURE" --notes-html "$RUNNER_TEMP/notes.html"
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/appcast.xml
+          git commit -m "Appcast: Voilà $VERSION (build $BUILD)"
+          git push origin main
+          echo "Appcast updated: https://flopitaux.github.io/Voila-app/appcast.xml" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Keep the DMG as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -137,4 +178,4 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2> /dev/null || true
-          rm -f GoogleOAuthClient.json "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/certificate.p12"
+          rm -f GoogleOAuthClient.json "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/sparkle.key"

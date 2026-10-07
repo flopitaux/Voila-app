@@ -13,6 +13,7 @@ struct MainView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 13)
                 .padding(.bottom, 10)
+                .background(WindowDragArea())   // drag the window from the header
 
             if let focus = store.focusTask {
                 FocusCard(task: focus)
@@ -23,27 +24,31 @@ struct MainView: View {
             }
 
             ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(store.openItems) { item in
-                        TaskRow(task: item.task, depth: item.depth)
+                LazyVStack(spacing: 6) {
+                    NowHeader(count: store.openCount, doneToday: store.doneTodayCount)
+                    ForEach(Array(store.openItems.enumerated()), id: \.element.id) { index, item in
+                        TaskRow(task: item.task, depth: item.depth, index: index)
                             .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)),
                                                     removal: .opacity.combined(with: .scale(scale: 0.9))))
                     }
 
                     if store.openItems.isEmpty && !store.isLoading {
                         EmptyState(hasDone: store.doneTodayCount > 0, laterCount: store.count(in: .later))
+                            .dropTarget(section: .now)
                     }
-                    EndDropZone(section: .today)
+                    EndDropZone(section: .now)
 
-                    // Later: inline and collapsed, so the default view is just Today.
+                    // Later: inline and collapsed, so the default view is just Now.
                     let later = store.items(in: .later)
                     if !later.isEmpty {
                         SectionHeader(title: "Later", icon: "moon", count: store.count(in: .later),
+                                      hint: store.dueInLaterCount > 0 ? "\(store.dueInLaterCount) due" : nil,
                                       expanded: $showLater)
+                            .dropTarget(section: .later)
                             .padding(.top, 6)
                         if showLater {
-                            ForEach(later) { item in
-                                TaskRow(task: item.task, depth: item.depth)
+                            ForEach(Array(later.enumerated()), id: \.element.id) { index, item in
+                                TaskRow(task: item.task, depth: item.depth, index: index)
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                             EndDropZone(section: .later)
@@ -123,6 +128,7 @@ private struct Header: View {
                                                            set: { model.setLaunchAtLogin($0) }))
                     Toggle("Show in Dock", isOn: Binding(get: { model.showInDock },
                                                         set: { model.setShowInDock($0) }))
+                    AppearancePicker()
                     Divider()
                     Button("Minimize") { model.minimizePanel() }
                         .keyboardShortcut("m")
@@ -130,6 +136,10 @@ private struct Header: View {
                         .keyboardShortcut("w")
                     Divider()
                     Button("Sign Out of Google") { model.signOut() }
+                    if model.updater.isAvailable {
+                        Button("Check for Updates…") { model.updater.checkForUpdates() }
+                            .disabled(!model.updater.canCheckForUpdates)
+                    }
                     Button("Quit Voilà") { NSApp.terminate(nil) }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -142,27 +152,34 @@ private struct Header: View {
                 .fixedSize()
             }
 
-            TodayStats(done: store.doneTodayCount, open: store.openCount)
         }
     }
 }
 
-/// "2 done today · 3 left … 40%"
-private struct TodayStats: View {
-    var done: Int
-    var open: Int
+/// "☀︎ Now 2 … ✓ 3 done today": the Now section title, styled like the Later header.
+/// The done count appears only once something was finished today.
+private struct NowHeader: View {
+    var count: Int
+    var doneToday: Int
 
     var body: some View {
-        let total = done + open
-        let fraction = total == 0 ? 0 : Double(done) / Double(total)
-        HStack {
-            Text(done == 0 ? "\(open) to do" : "\(done) done today · \(open) left")
+        HStack(spacing: 6) {
+            Image(systemName: "sun.max").font(.system(size: 10, weight: .semibold))
+            Text("Now")
+            Text("\(count)").monospacedDigit().foregroundStyle(.tertiary)
             Spacer()
-            Text(fraction, format: .percent.precision(.fractionLength(0)))
-                .monospacedDigit()
+            if doneToday > 0 {
+                Label("\(doneToday) done today", systemImage: "checkmark")
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(Theme.done)
+                    .contentTransition(.numericText())
+            }
         }
-        .font(.voila(11, .medium))
+        .font(.voila(12, .semibold))
         .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.top, 2)
+        .animation(.smooth, value: doneToday)
     }
 }
 
@@ -206,12 +223,11 @@ struct FocusCard: View {
                 .frame(width: 64, height: 64)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(track.isRunning ? "FOCUSING" : "PAUSED")
-                        .font(.voila(10, .heavy))
-                        .tracking(1.2)
+                    Text(track.isRunning ? "Focusing" : "Paused")
+                        .font(.voila(11, .medium))
                         .foregroundStyle(track.isRunning ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
                     Text(task.displayTitle)
-                        .font(.voila(15, .semibold))
+                        .font(.voila(15, .medium))
                         .lineLimit(2)
                     HStack(spacing: 4) {
                         Text(DurationFormat.clock(elapsed))
@@ -290,11 +306,35 @@ private struct EndDropZone: View {
     }
 }
 
+extension View {
+    /// Accepts a dragged task and moves it to the end of `section` (Now or Later), with a highlight.
+    func dropTarget(section: Bucket) -> some View { modifier(SectionDropTarget(section: section)) }
+}
+
+private struct SectionDropTarget: ViewModifier {
+    @Environment(AppModel.self) private var model
+    var section: Bucket
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Theme.tint.opacity(targeted ? 0.15 : 0)))
+            .dropDestination(for: String.self) { ids, _ in
+                guard let id = ids.first, let task = model.store.task(withID: id) else { return false }
+                Task { await model.store.move(task, toEndOf: section) }
+                return true
+            } isTargeted: { t in withAnimation(.easeOut(duration: 0.12)) { targeted = t } }
+    }
+}
+
 /// Collapsible section title ("› Later 12").
 private struct SectionHeader: View {
     var title: String
     var icon: String
     var count: Int
+    /// Small highlighted note after the count, e.g. "2 due" (tasks due today or overdue).
+    var hint: String? = nil
     @Binding var expanded: Bool
 
     var body: some View {
@@ -308,6 +348,10 @@ private struct SectionHeader: View {
                 Image(systemName: icon).font(.system(size: 10, weight: .semibold))
                 Text(title)
                 Text("\(count)").monospacedDigit().foregroundStyle(.tertiary)
+                if let hint {
+                    Chip(text: hint, systemImage: "calendar", tint: Theme.overdue)
+                        .help("Due today or overdue")
+                }
                 Spacer()
             }
             .font(.voila(12, .semibold))
@@ -335,7 +379,7 @@ private struct EmptyState: View {
                 .symbolEffect(.bounce, value: hasDone)
             Text(hasDone ? "All done for now!" : "Nothing for now")
                 .font(.voila(15, .semibold))
-            Text(hasDone ? "Enjoy it ✨" : laterCount > 0 ? "Pull a task in from Later below." : "Add a task with +.")
+            Text(hasDone ? "Enjoy it ✨" : laterCount > 0 ? "Pick a task from Later with ☀︎ or ▶." : "Add a task with +, then bring it to Now.")
                 .font(.voila(11))
                 .foregroundStyle(.secondary)
         }
@@ -546,8 +590,7 @@ private struct AddTaskBar: View {
         title = ""
         estimate = nil
         due = nil
-        // New tasks go to Today unless a date was chosen.
-        if date == nil { date = Calendar.current.startOfDay(for: .now) }
+        // New tasks go to Later (no date unless one was chosen); pick them into Now when ready.
         Task { await model.store.addTask(title: text, estimate: est, due: date) }
     }
 }

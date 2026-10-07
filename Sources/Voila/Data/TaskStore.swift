@@ -2,10 +2,10 @@ import AppKit
 import Foundation
 import Observation
 
-/// The two statuses a task can have, shown as **Now** and **Later**. Stored as the Google Tasks due date:
-/// `.today` (Now) = due today or earlier (overdue stays in Now); `.later` = no due date or a future one.
+/// The two statuses a task can have. **Now** = what you're actively working on, chosen by you and
+/// stored as a `now` flag in Voilà's notes line; **Later** = everything else. Due dates are independent.
 enum Bucket: Hashable {
-    case today, later
+    case now, later
 }
 
 /// A task shown in the open list, with its indentation depth (subtasks are depth 1).
@@ -53,12 +53,23 @@ final class TaskStore {
         if let parentID = task.parent, let parent = tasks.first(where: { $0.id == parentID }), !parent.isCompleted {
             return bucket(of: parent)
         }
-        guard let due = task.dueDate else { return .later }
-        return due <= Calendar.current.startOfDay(for: .now) ? .today : .later
+        let track = task.track
+        return track.isNow || track.isRunning ? .now : .later   // a running task is always active
     }
 
-    /// Today's open tasks (the main list).
-    var openItems: [TaskRowItem] { items(in: .today) }
+    /// Whether a task is due today or overdue (shown as a hint; it doesn't move the task).
+    func isDue(_ task: GTask) -> Bool {
+        guard let due = task.dueDate else { return false }
+        return due <= Calendar.current.startOfDay(for: .now)
+    }
+
+    /// Later tasks that are due today or overdue.
+    var dueInLaterCount: Int {
+        tasks.lazy.filter { !$0.isCompleted && $0.parent == nil && self.bucket(of: $0) == .later && self.isDue($0) }.count
+    }
+
+    /// Now's open tasks (the main list).
+    var openItems: [TaskRowItem] { items(in: .now) }
 
     func items(in bucket: Bucket) -> [TaskRowItem] {
         let open = tasks.filter { !$0.isCompleted }
@@ -84,14 +95,14 @@ final class TaskStore {
         tasks.lazy.filter { !$0.isCompleted && self.bucket(of: $0) == bucket }.count
     }
 
-    /// Open tasks for today (drives the header stats and the pill).
-    var openCount: Int { count(in: .today) }
+    /// Open tasks in Now (drives the header stats and the pill).
+    var openCount: Int { count(in: .now) }
 
     var doneTodayCount: Int {
         tasks.lazy.filter { $0.isCompleted && ($0.completedDate.map(Calendar.current.isDateInToday) ?? false) }.count
     }
 
-    var nextTask: GTask? { items(in: .today).first?.task }
+    var nextTask: GTask? { items(in: .now).first?.task }
 
     /// Forgets everything cached for the current account (sign-out, or a different account signing in).
     func reset() {
@@ -206,6 +217,7 @@ final class TaskStore {
         var track = task.track
         guard !track.isRunning else { return }
         track.runningSince = .now
+        track.isNow = true      // starting work makes the task active
         setFocus(task, listID: listID)
         await setTrack(track, on: task, listID: listID)
     }
@@ -221,16 +233,26 @@ final class TaskStore {
 
     func complete(_ task: GTask) async {
         let listID = listID(for: task)
-        let track = task.track.paused()
+        var track = task.track.paused()
+        track.isNow = false     // done: no longer active
         var fields: [String: Any] = ["status": "completed"]
-        if task.track.isRunning { fields["notes"] = NotesCodec.compose(body: task.noteBody, track: track) }
+        if task.track.isRunning || task.track.isNow {
+            fields["notes"] = NotesCodec.compose(body: task.noteBody, track: track)
+        }
         if focusTask?.id == task.id { setFocus(nil, listID: nil) }
         celebration += 1
         NSSound(named: "Glass")?.play()
+        let wasNow = bucket(of: task) == .now
         await mutate(task, listID: listID, fields: fields) {
             $0.status = "completed"
             $0.completed = ISO8601.format(.now)
             if let notes = fields["notes"] as? String { $0.notes = notes }
+        }
+        // Open subtasks of a Now task were active through their parent: keep them in Now.
+        if wasNow {
+            for child in tasks where child.parent == task.id && !child.isCompleted && !child.track.isNow {
+                await setNow(true, for: child)
+            }
         }
     }
 
@@ -261,9 +283,16 @@ final class TaskStore {
         }
     }
 
-    /// One-click switch between Today (due today) and Later (no due date).
+    /// One-click switch between Now and Later (the due date is left alone).
     func toggleBucket(_ task: GTask) async {
-        await setDue(bucket(of: task) == .today ? nil : Calendar.current.startOfDay(for: .now), for: task)
+        await setNow(bucket(of: task) != .now, for: task)
+    }
+
+    func setNow(_ isNow: Bool, for task: GTask) async {
+        var track = (tasks.first { $0.id == task.id } ?? task).track
+        guard track.isNow != isNow else { return }
+        track.isNow = isNow
+        await setTrack(track, on: tasks.first { $0.id == task.id } ?? task, listID: listID(for: task))
     }
 
     func rename(_ task: GTask, to title: String) async {
@@ -283,20 +312,20 @@ final class TaskStore {
     }
 
     /// Drag & drop: place `task` just before `target` (taking the target's parent). Dropping into the
-    /// other section also reschedules it (Today = due today, Later = the target's date or none).
+    /// other section also moves it between Now and Later.
     func move(_ task: GTask, before target: GTask) async {
         guard task.id != target.id else { return }
         let section = bucket(of: target)
         if target.parent == nil, bucket(of: task) != section {
-            await setDue(section == .today ? Calendar.current.startOfDay(for: .now) : target.dueDate, for: task)
+            await setNow(section == .now, for: task)
         }
         await move(task, parent: target.parent, beforeID: target.id, section: section)
     }
 
-    /// Drop below the last task of a section: move to its end (rescheduling if needed).
+    /// Drop below the last task of a section: move to its end (switching Now/Later if needed).
     func move(_ task: GTask, toEndOf section: Bucket) async {
         if bucket(of: task) != section || task.parent != nil {
-            await setDue(section == .today ? Calendar.current.startOfDay(for: .now) : nil, for: task)
+            await setNow(section == .now, for: task)
         }
         await move(task, parent: nil, beforeID: nil, section: section)
     }
@@ -375,14 +404,15 @@ final class TaskStore {
         selectedListID = "demo"
         tasks = [
             GTask(id: "1", title: "Write Q4 product strategy memo",
-                  notes: notes(TrackInfo(spent: 1500, estimate: 3600, runningSince: now.addingTimeInterval(-642))),
+                  notes: notes(TrackInfo(spent: 1500, estimate: 3600, runningSince: now.addingTimeInterval(-642), isNow: true)),
                   status: "needsAction", due: DueDate.string(from: now), position: "1"),
-            GTask(id: "2", title: "Review design mocks for onboarding", notes: notes(TrackInfo(spent: 2400, estimate: 1800)),
-                  status: "needsAction", due: DueDate.string(from: now.addingTimeInterval(-86400 * 2)), position: "2"),
+            GTask(id: "2", title: "Review design mocks for onboarding", notes: notes(TrackInfo(spent: 2400, estimate: 1800, isNow: true)),
+                  status: "needsAction", due: DueDate.string(from: now.addingTimeInterval(86400 * 3)), position: "2"),
             GTask(id: "2a", title: "Leave feedback in Figma", notes: nil, status: "needsAction", parent: "2", position: "1"),
             GTask(id: "3", title: "Prep customer demo", notes: "Use the retail dataset\n\n" + notes(TrackInfo(estimate: 2700)),
                   status: "needsAction", due: DueDate.string(from: now.addingTimeInterval(86400)), position: "3"),
-            GTask(id: "4", title: "Book flights to NYC", notes: nil, status: "needsAction", position: "4"),
+            GTask(id: "4", title: "Book flights to NYC", notes: nil, status: "needsAction",
+                  due: DueDate.string(from: now.addingTimeInterval(-86400)), position: "4"),
             GTask(id: "5", title: "Reply to Sarah about roadmap", notes: notes(TrackInfo(spent: 600)), status: "completed",
                   completed: ISO8601.format(now.addingTimeInterval(-3600)), position: "5"),
             GTask(id: "6", title: "Expense report", notes: nil, status: "completed",

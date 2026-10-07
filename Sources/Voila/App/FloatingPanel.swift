@@ -23,7 +23,9 @@ final class FloatingPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
-        isMovableByWindowBackground = true
+        // Not movable from anywhere: task rows need their own drags. The window moves from the
+        // header area, the compact pill and the sign-in screen (see WindowDragArea).
+        isMovableByWindowBackground = false
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
@@ -145,7 +147,7 @@ final class PanelController {
     }
 }
 
-/// Lets the user drag the panel from empty areas of the SwiftUI content (the title bar is transparent).
+/// Lets the user drag the panel from empty areas of the SwiftUI view it backs (header, pill, sign-in screen).
 struct WindowDragArea: NSViewRepresentable {
     final class DragView: NSView {
         override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
