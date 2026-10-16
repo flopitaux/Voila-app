@@ -71,6 +71,8 @@ struct RingPlayButton: View {
     var gap: CGFloat = 4
     /// Icon shown at rest when there's no estimate (defaults to the running/paused state).
     var idleSymbol: String?
+    /// Off: a small pulsing dot sits in the middle at rest instead of the % (for tight spaces).
+    var showsPercent = true
     var action: () -> Void
 
     @State private var hovering = false
@@ -84,7 +86,9 @@ struct RingPlayButton: View {
                     ZStack {
                         // At rest: completion % or a status icon.
                         Group {
-                            if let progress {
+                            if !showsPercent {
+                                LiveDot(isRunning: isRunning, size: size * 0.32)
+                            } else if let progress {
                                 Text("\(Int((progress * 100).rounded()))%")
                                     .font(.voila(size * (progress >= 1 ? 0.26 : 0.3), .bold))
                                     .monospacedDigit()
@@ -120,6 +124,31 @@ struct RingPlayButton: View {
         }
         .contentShape(Circle())
         .onHover { h in withAnimation(.spring(duration: 0.22, bounce: 0.2)) { hovering = h } }
+    }
+}
+
+/// Accent dot that gently breathes while running (still and faint when paused).
+struct LiveDot: View {
+    var isRunning: Bool
+    var size: CGFloat
+
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(Theme.accent)
+            .frame(width: size, height: size)
+            .background {
+                Circle()
+                    .fill(Theme.tint.opacity(0.35))
+                    .scaleEffect(pulse ? 2.1 : 1)
+                    .opacity(pulse ? 0 : 1)
+            }
+            .opacity(isRunning ? 1 : 0.5)
+            .onAppear {
+                guard isRunning else { return }
+                withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
+            }
     }
 }
 
