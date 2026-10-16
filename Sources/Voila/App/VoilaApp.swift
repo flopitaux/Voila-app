@@ -64,6 +64,11 @@ final class AppModel {
 
     private init() {
         store = TaskStore(auth: auth)
+        // Starting a task means it's time to focus: collapse to the compact pill.
+        store.onTaskStarted = { [weak self] in
+            guard let self, !self.isCompact else { return }
+            self.setCompact(true)
+        }
     }
 
     func launch() {

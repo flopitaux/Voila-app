@@ -8,7 +8,7 @@ A native macOS floating panel for your **Google Tasks**: always on top, with sta
 
 - **Always on top**: a floating panel visible on every Space and over full-screen apps. Drag it anywhere; it remembers its position and size.
 - **Standard macOS window**: real traffic lights, so you get the usual close, minimize (⌘M), zoom and the green button's tiling menu, plus a **Window** menu (Close ⌘W, Minimize, Zoom, Show Voilà ⌘0, Compact ⌘⇧C). Closing hides the panel but Voilà keeps running and timers keep counting. Click the **Dock icon** or the menu bar icon to bring it back. Voilà also shows in the Dock and ⌘-Tab.
-- **Compact pill**: collapse to a slim pill showing the running task, its live timer and progress (⤡ or ⌘⇧C to switch).
+- **Compact pill**: collapse to a slim pill showing the running task, its live timer and progress (⤡ or ⌘⇧C to switch). Starting a task collapses to the pill automatically.
 - **Focus card**: start a task (▶). The card shows a live clock and a ring filling toward your estimate, with an orange overtime arc and a `+12m` chip once you go over.
 - **One task at a time**: starting a task pauses the running one. Paused tasks keep their time, so you can resume until done.
 - **Complete with a flourish**: click the circle and you get a gradient check, a burst of particles, a sound and a *« Voilà ! »* badge. "Today" progress is shown at the top.

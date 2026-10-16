@@ -33,6 +33,9 @@ final class TaskStore {
     /// Set briefly after completing a task, to drive the celebration.
     private(set) var celebration = 0
 
+    /// Called when a task's timer starts (the app uses it to collapse to the compact pill).
+    @ObservationIgnored var onTaskStarted: (() -> Void)?
+
     init(auth: GoogleAuth) {
         api = TasksAPI(auth: auth)
         selectedListID = UserDefaults.standard.string(forKey: "selectedListID")
@@ -219,6 +222,7 @@ final class TaskStore {
         track.runningSince = .now
         track.isNow = true      // starting work makes the task active
         setFocus(task, listID: listID)
+        onTaskStarted?()
         await setTrack(track, on: task, listID: listID)
     }
 
