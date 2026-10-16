@@ -1,21 +1,23 @@
 :root {
-  --bg: #F6F7F9;
+  --bg: #FBF8F6;
   --card: #FFFFFF;
-  --text: #1D2229;
-  --muted: #5E6773;
-  --line: #E3E6EA;
-  --tint: #7899BD;
-  --tint2: #80B0A8;
-  --accent: linear-gradient(135deg, #6B8CB3, #73A69E);
+  --text: #1F1C22;
+  --muted: #6B6570;
+  --line: #ECE6E2;
+  --tint: #F59E6C;
+  --tint2: #9B8AF5;
+  --link: #C9622F;
+  --accent: linear-gradient(135deg, #F59E6C, #9B8AF5);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17191C;
-    --card: #1F2226;
-    --text: #ECEEF1;
-    --muted: #9AA3AE;
-    --line: #2C3036;
+    --bg: #1B1A1F;
+    --card: #27252C;
+    --text: #F3F1F5;
+    --muted: #A39DA8;
+    --line: #34313A;
+    --link: #F59E6C;
   }
 }
 
@@ -30,7 +32,7 @@ body {
   line-height: 1.6;
 }
 
-a { color: var(--tint); }
+a { color: var(--link); }
 
 .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px; }
 

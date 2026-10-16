@@ -109,7 +109,7 @@ struct CompactPill: View {
         }
     }
 
-    /// Hairline along the bottom edge: progress toward the estimate, amber once over time.
+    /// Hairline along the bottom edge: progress toward the estimate, raspberry once over time.
     private func progressLine(_ progress: Double) -> some View {
         GeometryReader { geo in
             Capsule()

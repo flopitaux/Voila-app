@@ -27,10 +27,10 @@ struct TaskRow: View {
     private var store: TaskStore { model.store }
 
     private var isLater: Bool { store.bucket(of: task) == .later }
-    /// Card background strength: Later is flatter; hover lifts the card a little.
-    private var cardFill: Color {
+    /// Tint laid over the warm card surface: Later is flatter; hover lifts the card a little.
+    private var cardTint: Color {
         let base = index.isMultiple(of: 2) ? Theme.tint : Theme.tint2
-        return base.opacity((isLater ? 0.06 : 0.10) + (hovering ? 0.04 : 0))
+        return base.opacity((isLater ? 0.02 : 0.04) + (hovering ? 0.05 : 0))
     }
 
     var body: some View {
@@ -103,8 +103,8 @@ struct TaskRow: View {
         .background {
             let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
             shape
-                .fill(track.isRunning ? AnyShapeStyle(Theme.tint.opacity(0.16))
-                                      : AnyShapeStyle(cardFill))
+                .fill(Theme.surface.opacity(isLater ? 0.6 : 1))
+                .overlay(shape.fill(track.isRunning ? Theme.tint.opacity(0.16) : cardTint))
                 .overlay(shape.strokeBorder(track.isRunning ? AnyShapeStyle(Theme.tint.opacity(0.45))
                                                            : AnyShapeStyle(.primary.opacity(0.07))))
                 .shadow(color: .black.opacity(isLater ? 0 : 0.18), radius: 3, y: 1)
@@ -144,7 +144,7 @@ struct TaskRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(Theme.background, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.primary.opacity(0.12)))
                     .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
                     .padding(.leading, 40)
@@ -192,13 +192,13 @@ struct TaskRow: View {
             .help("Mark as done")
         }
         .padding(3)
-        .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
+        .background(Theme.background, in: Capsule())
         .background(Capsule().strokeBorder(.primary.opacity(0.08)))
         .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
     }
 
     /// Leading circle: ▶ to start (⚡ / ⏸ for the running task). Its outline is the progress ring
-    /// (time vs. estimate, amber past 100%). Turns into a green ✓ while completing.
+    /// (time vs. estimate, raspberry past 100%). Turns into a green ✓ while completing.
     private func startButton(_ track: TrackInfo) -> some View {
         let running = track.isRunning
         let active = circleHovering && !checking

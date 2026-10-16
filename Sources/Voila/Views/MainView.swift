@@ -265,7 +265,9 @@ struct FocusCard: View {
             .padding(14)
             .background {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Theme.tint.opacity(track.isRunning ? 0.11 : 0.05))
+                    .fill(Theme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Theme.tint.opacity(track.isRunning ? 0.09 : 0.04)))
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .strokeBorder(Theme.tint.opacity(track.isRunning ? 0.28 : 0.12), lineWidth: 1))
             }
@@ -555,7 +557,7 @@ private struct AddTaskBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(nsColor: .windowBackgroundColor),
+        .background(Theme.background,
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .strokeBorder(Theme.tint.opacity(focused ? 0.45 : 0.15), lineWidth: 1))

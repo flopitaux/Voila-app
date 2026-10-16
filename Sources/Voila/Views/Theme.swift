@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension Font {
@@ -10,11 +11,11 @@ extension Font {
 }
 
 enum Theme {
-    // Calm palette: dusty blue → muted sage, with soft amber/coral for alerts.
-    static let tint = Color(red: 0.47, green: 0.60, blue: 0.74)
-    static let tint2 = Color(red: 0.50, green: 0.69, blue: 0.66)
-    static let overtime = Color(red: 0.89, green: 0.66, blue: 0.38)
-    static let overdue = Color(red: 0.86, green: 0.44, blue: 0.42)
+    // Apricot → lavender, matching the icon, with a raspberry red for alerts.
+    static let tint = Color(red: 0.961, green: 0.620, blue: 0.424)     // #F59E6C apricot
+    static let tint2 = Color(red: 0.608, green: 0.541, blue: 0.961)    // #9B8AF5 lavender
+    static let overtime = Color(red: 0.898, green: 0.329, blue: 0.416) // #E5546A raspberry
+    static let overdue = Color(red: 0.85, green: 0.30, blue: 0.33)
     static let done = Color(red: 0.36, green: 0.74, blue: 0.50)
 
     static let accent = LinearGradient(colors: [tint, tint2], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -22,9 +23,23 @@ enum Theme {
                                       startAngle: .degrees(-90), endAngle: .degrees(270))
 
     static let panelRadius: CGFloat = 26
+
+    /// Panel background: soft warm white in light mode, deep plum-charcoal in dark mode.
+    static let background = Color(nsColor: NSColor(name: "VoilaBackground") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.106, green: 0.102, blue: 0.122, alpha: 1)    // #1B1A1F
+            : NSColor(srgbRed: 0.984, green: 0.973, blue: 0.965, alpha: 1)    // #FBF8F6
+    })
+
+    /// Task cards: a surface a step lighter than the background.
+    static let surface = Color(nsColor: NSColor(name: "VoilaSurface") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.153, green: 0.145, blue: 0.173, alpha: 1)    // #27252C
+            : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)                // #FFFFFF
+    })
 }
 
-/// Circular progress: gradient arc for time vs. estimate, amber arc on top once over time,
+/// Circular progress: gradient arc for time vs. estimate, raspberry arc on top once over time,
 /// a spinning arc when running without an estimate.
 struct ProgressRing: View {
     var progress: Double?

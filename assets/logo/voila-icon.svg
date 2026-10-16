@@ -2,8 +2,8 @@
   <title>Voilà</title>
   <defs>
     <linearGradient id="body" x1="100" y1="100" x2="924" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#6B8CB3"/>
-      <stop offset="1" stop-color="#73A69E"/>
+      <stop offset="0" stop-color="#F59E6C"/>
+      <stop offset="1" stop-color="#9B8AF5"/>
     </linearGradient>
     <linearGradient id="gloss" x1="0" y1="100" x2="0" y2="512" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
