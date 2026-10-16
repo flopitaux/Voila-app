@@ -6,6 +6,22 @@
     <description>Voilà updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.2</title>
+      <pubDate>Fri, 16 Oct 2026 09:07:08 GMT</pubDate>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>1.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p><strong>What's new in Voilà 1.2</strong></p>
+<ul>
+<li><strong>New look</strong>: a warm apricot and lavender palette, soft warm backgrounds instead of gray, and a new app icon.</li>
+<li><strong>Focus mode</strong>: starting a task collapses Voilà to the compact pill; pausing it brings the full panel back.</li>
+<li><strong>Redesigned compact pill</strong>: a large live timer, a breathing focus dot and a progress line along the bottom edge. It keeps the panel's width and adapts when the panel is narrow.</li>
+<li>Pausing a task now clears the focus card instead of leaving a "Paused" card behind.</li>
+</ul>
+<p>Signed with Developer ID and notarized by Apple: open the DMG and drag <strong>Voilà</strong> to <strong>Applications</strong>. Requires macOS 26 or later (Apple Silicon or Intel).</p>]]></description>
+      <enclosure url="https://github.com/flopitaux/Voila-app/releases/download/v1.2/Voila-1.2.dmg" type="application/octet-stream" sparkle:edSignature="MBStU19ueMDdPXUOshrE1wJdOpwMgofInLkJEZc+rtmIngeDCS4bJf0GdwquBT6dbtRyeXHuUCYYYvJBNkmLCg==" length="6630393"/>
+    </item>
+    <item>
       <title>Version 1.1</title>
       <pubDate>Wed, 07 Oct 2026 17:10:18 GMT</pubDate>
       <sparkle:version>2</sparkle:version>
