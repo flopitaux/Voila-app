@@ -26,7 +26,7 @@ final class TaskStore {
     private(set) var isLoading = false
     var errorMessage: String?
 
-    /// The task shown in the focus card: running, or the last one paused (until completed or dismissed).
+    /// The task shown in the focus card: only while it's running (pausing clears it).
     private(set) var focusTask: GTask?
     private(set) var focusListID: String?
 
@@ -35,6 +35,8 @@ final class TaskStore {
 
     /// Called when a task's timer starts (the app uses it to collapse to the compact pill).
     @ObservationIgnored var onTaskStarted: (() -> Void)?
+    /// Called when the focused task is paused (the app uses it to expand back to the full panel).
+    @ObservationIgnored var onTaskPaused: (() -> Void)?
 
     init(auth: GoogleAuth) {
         api = TasksAPI(auth: auth)
@@ -162,12 +164,12 @@ final class TaskStore {
     private func syncFocus() async {
         if let focusTask, let focusListID {
             if focusListID == selectedListID {
-                if let fresh = tasks.first(where: { $0.id == focusTask.id }), !fresh.isCompleted {
+                if let fresh = tasks.first(where: { $0.id == focusTask.id }), !fresh.isCompleted, fresh.track.isRunning {
                     self.focusTask = fresh
                 } else {
                     setFocus(nil, listID: nil)
                 }
-            } else if let fresh = try? await api.task(focusTask.id, in: focusListID), !fresh.isCompleted {
+            } else if let fresh = try? await api.task(focusTask.id, in: focusListID), !fresh.isCompleted, fresh.track.isRunning {
                 self.focusTask = fresh
             } else {
                 setFocus(nil, listID: nil)
@@ -228,7 +230,12 @@ final class TaskStore {
 
     func pause(_ task: GTask) async {
         guard task.track.isRunning else { return }
-        await setTrack(task.track.paused(), on: task, listID: listID(for: task))
+        let listID = listID(for: task)
+        if focusTask?.id == task.id {
+            setFocus(nil, listID: nil)
+            onTaskPaused?()
+        }
+        await setTrack(task.track.paused(), on: task, listID: listID)
     }
 
     func toggleRunning(_ task: GTask) async {

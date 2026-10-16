@@ -69,6 +69,11 @@ final class AppModel {
             guard let self, !self.isCompact else { return }
             self.setCompact(true)
         }
+        // Pausing ends the focus session: back to the full panel.
+        store.onTaskPaused = { [weak self] in
+            guard let self, self.isCompact else { return }
+            self.setCompact(false)
+        }
     }
 
     func launch() {
