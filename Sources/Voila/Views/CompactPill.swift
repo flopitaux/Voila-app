@@ -3,9 +3,14 @@ import SwiftUI
 /// Minimal always-on-top pill: the focus task with its live timer, or what's next.
 /// Layout: [traffic lights] │ [ring] [Focusing / title] … [time / estimate] [✓] [⤢]
 /// A thin progress line runs along the bottom edge while a task with an estimate is running.
+/// The pill takes the panel's width; when that's narrow, the estimate is dropped and the
+/// buttons replace the timer only while the pointer is over the pill.
 struct CompactPill: View {
     @Environment(AppModel.self) private var model
     @State private var hovering = false
+    @State private var width: CGFloat = 420
+
+    private var isNarrow: Bool { width < 360 }
 
     var body: some View {
         let store = model.store
@@ -29,6 +34,7 @@ struct CompactPill: View {
             }
         }
         .overlay { CelebrationBurst(trigger: store.celebration).allowsHitTesting(false) }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hovering = h } }
     }
 
@@ -53,6 +59,7 @@ struct CompactPill: View {
                     .font(.voila(9.5, .semibold))
                     .textCase(.uppercase)
                     .kerning(0.6)
+                    .lineLimit(1)
                     .foregroundStyle(isOver ? AnyShapeStyle(Theme.overtime) : AnyShapeStyle(Theme.accent))
                 Text(task.displayTitle)
                     .font(.voila(13, .medium))
@@ -61,13 +68,13 @@ struct CompactPill: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
+            let timer = HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(DurationFormat.clock(track.elapsed(at: date)))
                     .font(.voila(17, .medium))
                     .monospacedDigit()
                     .foregroundStyle(isOver ? AnyShapeStyle(Theme.overtime) : AnyShapeStyle(.primary))
                     .contentTransition(.numericText())
-                if let estimate = track.estimate {
+                if let estimate = track.estimate, !isNarrow {
                     Text("/ \(DurationFormat.short(estimate))")
                         .font(.voila(11, .medium))
                         .foregroundStyle(.tertiary)
@@ -75,13 +82,25 @@ struct CompactPill: View {
             }
             .fixedSize()
 
-            HStack(spacing: 4) {
-                PillButton(systemImage: "checkmark", help: "Mark as done", emphasized: hovering) {
+            let buttons = HStack(spacing: 4) {
+                PillButton(systemImage: "checkmark", help: "Mark as done", emphasized: hovering || isNarrow) {
                     Task { await store.complete(task) }
                 }
-                PillButton(systemImage: "arrow.up.left.and.arrow.down.right", help: "Expand", emphasized: hovering) {
+                PillButton(systemImage: "arrow.up.left.and.arrow.down.right", help: "Expand",
+                           emphasized: hovering || isNarrow) {
                     model.setCompact(false)
                 }
+            }
+
+            if isNarrow {
+                // Not enough room for both: the buttons take the timer's place on hover.
+                ZStack(alignment: .trailing) {
+                    timer.opacity(hovering ? 0 : 1)
+                    buttons.opacity(hovering ? 1 : 0).allowsHitTesting(hovering)
+                }
+            } else {
+                timer
+                buttons
             }
         }
         .frame(maxHeight: .infinity)

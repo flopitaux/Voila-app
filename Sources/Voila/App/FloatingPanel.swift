@@ -39,7 +39,9 @@ final class FloatingPanel: NSPanel {
 @MainActor
 final class PanelController {
     static let expandedDefault = NSSize(width: 380, height: 600)
-    static let compactSize = NSSize(width: 420, height: 52)
+    static let compactHeight: CGFloat = 52
+    /// The pill keeps the expanded panel's width, so the window only changes height.
+    static var compactSize: NSSize { NSSize(width: savedExpandedSize.width, height: compactHeight) }
 
     let panel: FloatingPanel
 
@@ -141,7 +143,7 @@ final class PanelController {
     private func saveFrame() {
         UserDefaults.standard.set(NSStringFromPoint(NSPoint(x: panel.frame.minX, y: panel.frame.maxY)),
                                   forKey: "panelTopLeft")
-        if panel.frame.height > Self.compactSize.height + 10 {
+        if panel.frame.height > Self.compactHeight + 10 {
             UserDefaults.standard.set(NSStringFromSize(panel.frame.size), forKey: "panelExpandedSize")
         }
     }
