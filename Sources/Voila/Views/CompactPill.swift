@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Minimal always-on-top pill: the focus task with its live timer, or what's next.
-/// Layout: [traffic lights] │ [ring] [Focusing / title] … [time / estimate] [✓] [⤢]
+/// Layout: [traffic lights] │ [ring] [title] … [time / estimate] [✓] [⤢]
 /// A thin progress line runs along the bottom edge while a task with an estimate is running.
 /// The pill takes the panel's width; when that's narrow, the estimate is dropped and the
 /// buttons replace the timer only while the pointer is over the pill.
@@ -54,19 +54,11 @@ struct CompactPill: View {
             }
             .frame(width: 30, height: 30)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(isOver ? "Over time" : "Focusing")
-                    .font(.voila(9.5, .semibold))
-                    .textCase(.uppercase)
-                    .kerning(0.6)
-                    .lineLimit(1)
-                    .foregroundStyle(isOver ? AnyShapeStyle(Theme.overtime) : AnyShapeStyle(Theme.accent))
-                Text(task.displayTitle)
-                    .font(.voila(13, .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(task.displayTitle)
+                .font(.voila(13, .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             let timer = HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(DurationFormat.clock(track.elapsed(at: date)))
@@ -143,7 +135,7 @@ struct CompactPill: View {
                     .frame(width: 30, height: 30)
             }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(store.nextTask == nil ? "All clear" : "Up next · \(store.openCount) to do")
                     .font(.voila(9.5, .semibold))
                     .textCase(.uppercase)

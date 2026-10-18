@@ -170,7 +170,9 @@ struct LiveDot: View {
 /// Burst of colored dots, fired whenever `trigger` changes.
 struct CelebrationBurst: View {
     var trigger: Int
-    @State private var fired = false
+    /// Starts "fired" so the dots stay hidden at rest — including when the view is re-created
+    /// after a burst — and only show while a new burst animates.
+    @State private var fired = true
 
     private let colors: [Color] = [Theme.tint, Theme.tint2, Theme.overtime, .white.opacity(0.8), Theme.tint2.opacity(0.7), Theme.tint.opacity(0.7)]
 
@@ -187,7 +189,6 @@ struct CelebrationBurst: View {
             }
         }
         .allowsHitTesting(false)
-        .opacity(trigger == 0 ? 0 : 1)
         .onChange(of: trigger) {
             fired = false
             withAnimation(.easeOut(duration: 0.8)) { fired = true }
