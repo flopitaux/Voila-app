@@ -6,6 +6,22 @@
     <description>Voilà updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.3.1</title>
+      <pubDate>Mon, 19 Oct 2026 18:20:26 GMT</pubDate>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p><strong>What's new in Voilà 1.3.1</strong></p>
+<ul>
+<li><strong>Cleaner compact pill</strong>: just the task title next to the ring, without the "Focusing" label. The timer still turns raspberry when you go over the estimate.</li>
+<li><strong>Quieter completions</strong>: completing a task no longer plays a sound. The burst and the <em>« Voilà ! »</em> badge stay.</li>
+<li><strong>Smoother wake from sleep</strong>: Voilà waits for the network to come back and refreshes quietly, instead of flashing an "offline" error. Background syncs no longer show errors while you're offline.</li>
+<li>Fixed a stray dot that could sit over the task title in the compact pill, and the completion burst now plays every time.</li>
+</ul>
+<p>Signed with Developer ID and notarized by Apple: open the DMG and drag <strong>Voilà</strong> to <strong>Applications</strong>. Requires macOS 26 or later (Apple Silicon or Intel).</p>]]></description>
+      <enclosure url="https://github.com/flopitaux/Voila-app/releases/download/v1.3.1/Voila-1.3.1.dmg" type="application/octet-stream" sparkle:edSignature="n/2H7prZbVduFFOXf4ddsXaDD5G78Kt/kbJ31LwnbtCbFZwxmRQFsow/kF+e9AcpjDaQ9qcJvLvAgu1+CVGbAw==" length="6630097"/>
+    </item>
+    <item>
       <title>Version 1.2</title>
       <pubDate>Fri, 16 Oct 2026 09:07:08 GMT</pubDate>
       <sparkle:version>3</sparkle:version>
