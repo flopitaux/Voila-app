@@ -146,18 +146,40 @@ final class TaskStore {
         if reload { Task { await refresh() } }
     }
 
-    func refresh() async {
-        guard let listID = selectedListID else { return }
+    /// Reloads the selected list. Returns false only when it failed because the network is down
+    /// and `reportingOffline` is off (that error is then kept quiet, so the caller can retry).
+    @discardableResult
+    func refresh(reportingOffline: Bool = true) async -> Bool {
+        guard let listID = selectedListID else { return true }
         isLoading = true
         defer { isLoading = false }
         do {
             let fetched = try await api.tasks(in: listID)
-            guard listID == selectedListID else { return }
+            guard listID == selectedListID else { return true }
             tasks = fetched
             await syncFocus()
         } catch {
+            if !reportingOffline, Self.isOffline(error) { return false }
             report(error)
         }
+        return true
+    }
+
+    /// After the Mac wakes, the network often takes a few seconds to come back: retry quietly
+    /// for a little while instead of flashing an "offline" error.
+    func refreshAfterWake() async {
+        for delay in [2, 5, 10, 20] {
+            try? await Task.sleep(for: .seconds(delay))
+            if Task.isCancelled { return }
+            if await refresh(reportingOffline: false) { return }
+        }
+        await refresh()
+    }
+
+    private static func isOffline(_ error: Error) -> Bool {
+        guard let code = (error as? URLError)?.code else { return false }
+        return [.notConnectedToInternet, .networkConnectionLost, .timedOut,
+                .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed].contains(code)
     }
 
     /// Keeps the focus card in sync with the server, adopting a task started elsewhere.

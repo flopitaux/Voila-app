@@ -11,7 +11,7 @@ A native macOS floating panel for your **Google Tasks**: always on top, with sta
 - **Compact pill**: collapse to a slim pill showing the running task, a large live timer, a breathing focus dot and a progress line along the bottom edge (raspberry once over the estimate); it keeps the panel's width (⤡ or ⌘⇧C to switch). Starting a task collapses to the pill automatically; pausing it expands back to the full panel.
 - **Focus card**: start a task (▶). The card shows a live clock and a ring filling toward your estimate, with an orange overtime arc and a `+12m` chip once you go over.
 - **One task at a time**: starting a task pauses the running one. Paused tasks keep their time, so you can resume until done.
-- **Complete with a flourish**: click the circle and you get a gradient check, a burst of particles, a sound and a *« Voilà ! »* badge. "Today" progress is shown at the top.
+- **Complete with a flourish**: click the circle and you get a gradient check, a burst of particles and a *« Voilà ! »* badge. "Today" progress is shown at the top.
 - **Now / Later**: **Now** is what you're actively working on: you choose it, and it has nothing to do with due dates. Below it, a collapsed **Later** section holds everything else; click it to expand inline. If Later contains tasks due today or overdue, its header shows a red "N due" hint. Now is saved as a small `now` flag in Voilà's notes line (e.g. `⏱ 24m / 1h · now`), so it syncs across Macs. **Completed** is pinned to the bottom edge of the window (next to the + button); click it to reveal recently completed tasks just above. Each row starts with ▶ (click to start; starting a Later task moves it into Now; the running task shows ⚡ and pauses on click). Hover a Later task for ☀︎ Now; hover any task for a green ✓ to complete it (completing removes it from Now). To send a Now task back to Later, drag it onto Later or right-click → Move to Later. You can also drag a task between Now and Later. New tasks go to Later. The Now header shows how many tasks are in Now and, once you finish some, "✓ N done today". The pill and "Up next" use Now.
 - **Switchable lists**: click the list title.
 - **Due dates**: Today / Tomorrow / Next Week / pick a date. Badges show overdue, today and tomorrow.
@@ -32,7 +32,7 @@ Everything is in Google Tasks. Time tracking is a single line appended to the ta
 ⏱ 42m10s / 1h ▶ 2026-10-03T16:02:11Z
 ```
 
-`42m10s` is the time spent, `1h` is the estimate, and `▶ <time>` means the timer is running since that time. A timer keeps running even if you quit the app or close your laptop. The app syncs every 60 s, on wake, and on every action.
+`42m10s` is the time spent, `1h` is the estimate, and `▶ <time>` means the timer is running since that time. A timer keeps running even if you quit the app or close your laptop. The app syncs every 60 s, on wake (retrying quietly until the network is back), and on every action.
 
 ## 1. Create your Google OAuth client (~5 min, one time)
 

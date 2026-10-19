@@ -94,7 +94,7 @@ final class AppModel {
 
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
                                                           object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshNow() }
+            MainActor.assumeIsolated { self?.refreshAfterWake() }
         }
     }
 
@@ -105,7 +105,7 @@ final class AppModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, self.auth.isSignedIn else { continue }
-                await self.store.refresh()
+                await self.store.refresh(reportingOffline: false)   // background poll: don't nag while offline
             }
         }
     }
@@ -116,6 +116,11 @@ final class AppModel {
             if store.lists.isEmpty { await store.loadLists() }
             await store.refresh()
         }
+    }
+
+    private func refreshAfterWake() {
+        guard auth.isSignedIn else { return }
+        Task { await store.refreshAfterWake() }
     }
 
     func signOut() {

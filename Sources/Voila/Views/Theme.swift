@@ -168,31 +168,31 @@ struct LiveDot: View {
 }
 
 /// Burst of colored dots, fired whenever `trigger` changes.
+/// The keyframes run 0 → 1 on each change; at rest the value is 1, so the dots stay hidden
+/// (also when the view is re-created after a burst).
 struct CelebrationBurst: View {
     var trigger: Int
-    /// Starts "fired" so the dots stay hidden at rest — including when the view is re-created
-    /// after a burst — and only show while a new burst animates.
-    @State private var fired = true
 
     private let colors: [Color] = [Theme.tint, Theme.tint2, Theme.overtime, .white.opacity(0.8), Theme.tint2.opacity(0.7), Theme.tint.opacity(0.7)]
 
     var body: some View {
-        ZStack {
-            ForEach(0..<14, id: \.self) { i in
-                let angle = Double(i) / 14 * 2 * .pi
-                Circle()
-                    .fill(colors[i % colors.count])
-                    .frame(width: i.isMultiple(of: 3) ? 7 : 5)
-                    .offset(x: fired ? cos(angle) * 46 : 0, y: fired ? sin(angle) * 46 : 0)
-                    .opacity(fired ? 0 : 1)
-                    .scaleEffect(fired ? 0.4 : 1)
+        KeyframeAnimator(initialValue: 1.0, trigger: trigger) { t in
+            ZStack {
+                ForEach(0..<14, id: \.self) { i in
+                    let angle = Double(i) / 14 * 2 * .pi
+                    Circle()
+                        .fill(colors[i % colors.count])
+                        .frame(width: i.isMultiple(of: 3) ? 7 : 5)
+                        .offset(x: cos(angle) * 46 * t, y: sin(angle) * 46 * t)
+                        .opacity(1 - t)
+                        .scaleEffect(1 - 0.6 * t)
+                }
             }
+        } keyframes: { _ in
+            MoveKeyframe(0)
+            CubicKeyframe(1, duration: 0.8, startVelocity: 2.5, endVelocity: 0)   // ease out
         }
         .allowsHitTesting(false)
-        .onChange(of: trigger) {
-            fired = false
-            withAnimation(.easeOut(duration: 0.8)) { fired = true }
-        }
     }
 }
 
