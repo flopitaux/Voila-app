@@ -252,7 +252,6 @@ final class TaskStore {
         }
         if focusTask?.id == task.id { setFocus(nil, listID: nil) }
         celebration += 1
-        NSSound(named: "Glass")?.play()
         let wasNow = bucket(of: task) == .now
         await mutate(task, listID: listID, fields: fields) {
             $0.status = "completed"
