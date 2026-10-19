@@ -178,21 +178,26 @@ struct CelebrationBurst: View {
     var body: some View {
         KeyframeAnimator(initialValue: 1.0, trigger: trigger) { t in
             ZStack {
-                ForEach(0..<14, id: \.self) { i in
-                    let angle = Double(i) / 14 * 2 * .pi
-                    Circle()
-                        .fill(colors[i % colors.count])
-                        .frame(width: i.isMultiple(of: 3) ? 7 : 5)
-                        .offset(x: cos(angle) * 46 * t, y: sin(angle) * 46 * t)
-                        .opacity(1 - t)
-                        .scaleEffect(1 - 0.6 * t)
-                }
+                ForEach(0..<14, id: \.self) { i in dot(i, at: t) }
             }
         } keyframes: { _ in
             MoveKeyframe(0)
             CubicKeyframe(1, duration: 0.8, startVelocity: 2.5, endVelocity: 0)   // ease out
         }
         .allowsHitTesting(false)
+    }
+
+    /// Dot `i` of 14 at time `t` (0 = start, 1 = gone). Kept separate so the type checker stays fast.
+    private func dot(_ i: Int, at t: Double) -> some View {
+        let angle: Double = Double(i) / 14 * 2 * .pi
+        let distance: Double = 46 * t
+        let size: CGFloat = i.isMultiple(of: 3) ? 7 : 5
+        return Circle()
+            .fill(colors[i % colors.count])
+            .frame(width: size, height: size)
+            .offset(x: CGFloat(cos(angle) * distance), y: CGFloat(sin(angle) * distance))
+            .opacity(1 - t)
+            .scaleEffect(CGFloat(1 - 0.6 * t))
     }
 }
 
