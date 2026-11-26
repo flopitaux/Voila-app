@@ -23,6 +23,11 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// What the expanded panel shows: the task lists alone, or today's meetings above them.
+enum PanelTab: String {
+    case tasks, today
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -31,6 +36,8 @@ final class AppModel {
     let auth = GoogleAuth()
     let updater = Updater()
     let store: TaskStore
+    let calendar: CalendarStore
+    private(set) var tab = PanelTab(rawValue: UserDefaults.standard.string(forKey: "panelTab") ?? "") ?? .tasks
     private(set) var isCompact = UserDefaults.standard.bool(forKey: "compact")
     /// Whether the add-task field is expanded (otherwise only the + button shows).
     var isAddingTask = false
@@ -52,6 +59,8 @@ final class AppModel {
     @ObservationIgnored private var panel: PanelController?
     @ObservationIgnored private var refreshLoop: Task<Void, Never>?
     @ObservationIgnored private var clockTimer: Timer?
+    @ObservationIgnored private let meetingCard = MeetingCardController()
+    @ObservationIgnored private var meetingAlarm: Task<Void, Never>?
 
     /// Ticks every 15 s so the menu bar can show the running task's minutes.
     private(set) var clock = Date()
@@ -62,8 +71,28 @@ final class AppModel {
         return Int(track.elapsed(at: clock) / 60)
     }
 
+    /// Whether meetings are available (calendar permission granted, or demo data).
+    var showsCalendar: Bool { (auth.isSignedIn && auth.hasCalendarAccess) || isDemo }
+
+    /// Next or ongoing meeting, for the menu bar (nil when nothing is within the hour).
+    var meetingStatus: MeetingStatus? { showsCalendar ? calendar.status(at: clock) : nil }
+
+    /// "⏱ 42m" for the running task and "📅 12m" / "📹 23m left" for meetings, side by side.
+    var menuBarParts: [MenuBarLabel.Part] {
+        var parts: [MenuBarLabel.Part] = []
+        if let minutes = runningMinutes { parts.append(.init(symbol: "timer", text: "\(minutes)m")) }
+        switch meetingStatus {
+        case .upcoming(let minutes): parts.append(.init(symbol: "calendar", text: "\(minutes)m"))
+        case .ongoing(let left): parts.append(.init(symbol: "video.fill", text: "\(left)m left"))
+        case nil: break
+        }
+        return parts
+    }
+
     private init() {
         store = TaskStore(auth: auth)
+        calendar = CalendarStore(auth: auth)
+        calendar.onChange = { [weak self] in self?.armMeetingAlarm() }
         // Starting a task means it's time to focus: collapse to the compact pill.
         store.onTaskStarted = { [weak self] in
             guard let self, !self.isCompact else { return }
@@ -80,7 +109,10 @@ final class AppModel {
         if !isDemo { updater.start() }
         NSApp.appearance = appearance.nsAppearance
         clockTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.clock = Date() }
+            MainActor.assumeIsolated {
+                self?.clock = Date()
+                self?.announceDueMeetings()   // safety net for the precise alarm below
+            }
         }
         let controller = PanelController(rootView: RootView().environment(self), compact: isCompact)
         panel = controller
@@ -88,7 +120,14 @@ final class AppModel {
         trafficLightsInset = controller.trafficLightsInset
         controller.show()
         #if DEBUG
-        if isDemo { store.loadDemo() }
+        if isDemo {
+            store.loadDemo()
+            calendar.loadDemo()
+            if let name = ProcessInfo.processInfo.environment["VOILA_DEMO_CARD"],
+               let meeting = calendar.meetings.first(where: { $0.id == name }) {
+                meetingCard.present([meeting], activate: false)
+            }
+        }
         #endif
         if auth.isSignedIn && !isDemo { startSync() }
 
@@ -101,11 +140,13 @@ final class AppModel {
     func startSync() {
         refreshLoop?.cancel()
         refreshLoop = Task { [weak self] in
+            await self?.calendar.refresh()
             await self?.store.bootstrap()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, self.auth.isSignedIn else { continue }
                 await self.store.refresh(reportingOffline: false)   // background poll: don't nag while offline
+                await self.calendar.refresh()
             }
         }
     }
@@ -113,26 +154,84 @@ final class AppModel {
     func refreshNow() {
         guard auth.isSignedIn else { return }
         Task {
+            async let meetings: Void = calendar.refresh()
             if store.lists.isEmpty { await store.loadLists() }
             await store.refresh()
+            await meetings
         }
     }
 
     private func refreshAfterWake() {
         guard auth.isSignedIn else { return }
-        Task { await store.refreshAfterWake() }
+        Task {
+            await store.refreshAfterWake()
+            clock = Date()
+            await calendar.refresh()
+            announceDueMeetings()
+        }
     }
 
     func signOut() {
         refreshLoop?.cancel()
+        meetingAlarm?.cancel()
+        meetingCard.close()
         auth.signOut()
         store.reset()
+        calendar.reset()
     }
 
     /// After a successful sign-in: start fresh (it may be a different account) and sync.
     func didSignIn() {
         store.reset()
+        calendar.reset()
         startSync()
+    }
+
+    // MARK: - Meetings
+
+    func setTab(_ tab: PanelTab) {
+        withAnimation(.smooth(duration: 0.3)) { self.tab = tab }
+        UserDefaults.standard.set(tab.rawValue, forKey: "panelTab")
+        if tab == .today { Task { await calendar.refresh() } }
+    }
+
+    /// Accounts connected before the calendar existed: go through Google's consent once more.
+    func connectCalendar() {
+        Task {
+            do {
+                try await auth.signIn()
+                didSignIn()
+            } catch is CancellationError {
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Opens the meeting card on request (a click in the Today view or the menu bar).
+    func showMeeting(_ meeting: Meeting) {
+        meetingCard.present([meeting], activate: true)
+    }
+
+    /// Shows the card for meetings that just started, without taking keyboard focus.
+    private func announceDueMeetings() {
+        guard showsCalendar, !isDemo else { return }
+        let due = calendar.takeDue(at: .now)
+        if !due.isEmpty { meetingCard.present(due, activate: false) }
+    }
+
+    /// Sleeps until the next meeting's start so its card appears on time (the 15 s clock alone
+    /// could be late). Re-armed after every calendar load.
+    private func armMeetingAlarm() {
+        meetingAlarm?.cancel()
+        announceDueMeetings()
+        guard let next = calendar.nextAnnouncement(after: .now) else { return }
+        meetingAlarm = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow)))
+            guard !Task.isCancelled, let self else { return }
+            self.clock = Date()
+            self.armMeetingAlarm()
+        }
     }
 
     func startAddingTask() {
@@ -215,10 +314,11 @@ struct VoilaApp: App {
         MenuBarExtra {
             MenuBarContent().environment(model)
         } label: {
-            if let minutes = model.runningMinutes {
-                Image(nsImage: MenuBarLabel.image(minutes: minutes))
-            } else {
+            let parts = model.menuBarParts
+            if parts.isEmpty {
                 Image(systemName: "checklist")
+            } else {
+                Image(nsImage: MenuBarLabel.image(parts))
             }
         }
         .commands {
@@ -242,23 +342,34 @@ struct VoilaApp: App {
     }
 }
 
-/// Draws "⏱ 42m" as one template image: menu bar items reliably show a single image,
+/// Draws "⏱ 42m  📅 12m" as one template image: menu bar items reliably show a single image,
 /// and a template image follows the menu bar's light/dark appearance.
 enum MenuBarLabel {
-    static func image(minutes: Int) -> NSImage {
-        let text = "\(minutes)m" as NSString
+    struct Part: Equatable {
+        var symbol: String
+        var text: String
+    }
+
+    static func image(_ parts: [Part]) -> NSImage {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
-        let textSize = text.size(withAttributes: attributes)
-        let symbol = NSImage(systemSymbolName: "timer", accessibilityDescription: "Running")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) ?? NSImage()
-        let height: CGFloat = 18, gap: CGFloat = 4
-        let size = NSSize(width: ceil(symbol.size.width + gap + textSize.width), height: height)
-        let image = NSImage(size: size, flipped: false) { _ in
-            symbol.draw(in: NSRect(x: 0, y: (height - symbol.size.height) / 2,
-                                   width: symbol.size.width, height: symbol.size.height))
-            text.draw(at: NSPoint(x: symbol.size.width + gap, y: (height - textSize.height) / 2),
-                      withAttributes: attributes)
+        let height: CGFloat = 18, gap: CGFloat = 4, partGap: CGFloat = 9
+        let items = parts.map { part in
+            (symbol: NSImage(systemSymbolName: part.symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) ?? NSImage(),
+             text: part.text as NSString, textSize: (part.text as NSString).size(withAttributes: attributes))
+        }
+        let width = items.reduce(CGFloat(0)) { $0 + $1.symbol.size.width + gap + $1.textSize.width }
+            + partGap * CGFloat(max(0, items.count - 1))
+        let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) { _ in
+            var x: CGFloat = 0
+            for item in items {
+                item.symbol.draw(in: NSRect(x: x, y: (height - item.symbol.size.height) / 2,
+                                            width: item.symbol.size.width, height: item.symbol.size.height))
+                x += item.symbol.size.width + gap
+                item.text.draw(at: NSPoint(x: x, y: (height - item.textSize.height) / 2), withAttributes: attributes)
+                x += item.textSize.width + partGap
+            }
             return true
         }
         image.isTemplate = true
@@ -273,6 +384,17 @@ private struct MenuBarContent: View {
         Button(model.isPanelVisible ? "Close Panel" : "Show Panel") { model.togglePanel() }
             .keyboardShortcut("t")
         Button(model.isCompact ? "Expand Panel" : "Compact Panel") { model.setCompact(!model.isCompact) }
+        if model.showsCalendar, let meeting = model.calendar.current(at: model.clock) ?? model.calendar.next(after: model.clock),
+           Calendar.current.isDateInToday(meeting.start) {
+            Divider()
+            Button("\(meeting.isOngoing(at: model.clock) ? "Now" : meeting.start.formatted(date: .omitted, time: .shortened)): \(meeting.title)") {
+                model.showMeeting(meeting)
+            }
+            if let link = meeting.link {
+                Button(link.joinTitle) { link.open() }
+            }
+            Divider()
+        }
         if model.auth.isSignedIn {
             Button("Refresh") { model.refreshNow() }
                 .keyboardShortcut("r")

@@ -25,6 +25,11 @@ struct MainView: View {
 
             ScrollView {
                 LazyVStack(spacing: 6) {
+                    // Today view: the day's meetings sit above the same task list.
+                    if model.tab == .today {
+                        TodayAgenda()
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                     NowHeader(count: store.openCount, doneToday: store.doneTodayCount)
                     ForEach(Array(store.openItems.enumerated()), id: \.element.id) { index, item in
                         TaskRow(task: item.task, depth: item.depth, index: index)
@@ -116,6 +121,11 @@ private struct Header: View {
 
                 Spacer()
 
+                IconButton(systemImage: "calendar",
+                           help: model.tab == .today ? "Hide today's meetings" : "Today: meetings and tasks",
+                           active: model.tab == .today) {
+                    model.setTab(model.tab == .today ? .tasks : .today)
+                }
                 IconButton(systemImage: "arrow.clockwise", help: "Refresh") { model.refreshNow() }
                     .rotationEffect(.degrees(store.isLoading ? 360 : 0))
                     .animation(store.isLoading ? .linear(duration: 0.9).repeatForever(autoreverses: false)
@@ -186,6 +196,8 @@ private struct NowHeader: View {
 struct IconButton: View {
     var systemImage: String
     var help: String
+    /// Highlighted, for a toggle that is on.
+    var active = false
     var action: () -> Void
     @State private var hovering = false
 
@@ -194,11 +206,12 @@ struct IconButton: View {
             Image(systemName: systemImage)
                 .font(.voila(12, .semibold))
                 .frame(width: 26, height: 26)
-                .background(.primary.opacity(hovering ? 0.08 : 0), in: Circle())
+                .background(active ? AnyShapeStyle(Theme.tint2.opacity(hovering ? 0.26 : 0.18))
+                                   : AnyShapeStyle(.primary.opacity(hovering ? 0.08 : 0)), in: Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(active ? AnyShapeStyle(Theme.tint2) : AnyShapeStyle(.secondary))
         .help(help)
         .onHover { hovering = $0 }
     }

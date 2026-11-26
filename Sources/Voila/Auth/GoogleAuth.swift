@@ -29,12 +29,18 @@ enum AuthError: LocalizedError {
 @MainActor
 @Observable
 final class GoogleAuth {
-    static let scope = "https://www.googleapis.com/auth/tasks"
+    static let tasksScope = "https://www.googleapis.com/auth/tasks"
+    /// Read-only access to events, for the Today view and the meeting card.
+    static let calendarScope = "https://www.googleapis.com/auth/calendar.events.readonly"
+    static let scope = "\(tasksScope) \(calendarScope)"
 
     private(set) var clientID: String
     private(set) var clientSecret: String
     private(set) var isSignedIn: Bool
     private(set) var isSigningIn = false
+    /// False for accounts connected before Voilà asked for the calendar (or when the user
+    /// unticked it on Google's consent screen): the Today view then offers to connect it.
+    private(set) var hasCalendarAccess = UserDefaults.standard.bool(forKey: "calendarGranted")
 
     private var refreshToken: String?
     private var accessToken: String?
@@ -134,7 +140,13 @@ final class GoogleAuth {
         Keychain.set(refresh, for: "refreshToken")
         accessToken = token.access_token
         expiry = Date().addingTimeInterval(TimeInterval(token.expires_in ?? 3600))
+        setCalendarAccess(token.scope?.contains(Self.calendarScope) ?? false)
         isSignedIn = true
+    }
+
+    func setCalendarAccess(_ granted: Bool) {
+        hasCalendarAccess = granted
+        UserDefaults.standard.set(granted, forKey: "calendarGranted")
     }
 
     func cancelSignIn() {
@@ -153,6 +165,7 @@ final class GoogleAuth {
         accessToken = nil
         expiry = .distantPast
         Keychain.set(nil, for: "refreshToken")
+        setCalendarAccess(false)
         isSignedIn = false
     }
 
@@ -191,6 +204,7 @@ final class GoogleAuth {
         let access_token: String
         let expires_in: Int?
         let refresh_token: String?
+        let scope: String?
     }
 
     private struct TokenError: Decodable {

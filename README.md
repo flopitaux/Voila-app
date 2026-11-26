@@ -2,7 +2,7 @@
 
 *Start, focus, finish… voilà.*
 
-A native macOS floating panel for your **Google Tasks**: always on top, with start / pause / resume time tracking and a live progress ring against your estimate.
+A native macOS floating panel for your **Google Tasks**: always on top, with start / pause / resume time tracking and a live progress ring against your estimate. It also shows the day's meetings from your **Google Calendar** and brings up a card with a Join button when one starts.
 
 ## Features
 
@@ -13,6 +13,8 @@ A native macOS floating panel for your **Google Tasks**: always on top, with sta
 - **One task at a time**: starting a task pauses the running one. Paused tasks keep their time, so you can resume until done.
 - **Complete with a flourish**: click the circle and you get a gradient check, a burst of particles and a *« Voilà ! »* badge. "Today" progress is shown at the top.
 - **Now / Later**: **Now** is what you're actively working on: you choose it, and it has nothing to do with due dates. Below it, a collapsed **Later** section holds everything else; click it to expand inline. If Later contains tasks due today or overdue, its header shows a red "N due" hint. Now is saved as a small `now` flag in Voilà's notes line (e.g. `⏱ 24m / 1h · now`), so it syncs across Macs. **Completed** is pinned to the bottom edge of the window (next to the + button); click it to reveal recently completed tasks just above. Each row starts with ▶ (click to start; starting a Later task moves it into Now; the running task shows ⚡ and pauses on click). Hover a Later task for ☀︎ Now; hover any task for a green ✓ to complete it (completing removes it from Now). To send a Now task back to Later, drag it onto Later or right-click → Move to Later. You can also drag a task between Now and Later. New tasks go to Later. The Now header shows how many tasks are in Now and, once you finish some, "✓ N done today". The pill and "Up next" use Now.
+- **Today view** (calendar button in the header): today's meetings from your Google Calendar sit above your tasks, in time order, with their duration, where they happen and who is in them. The meeting that is on is highlighted with the minutes left; a "now" line between meetings tells you how long you are free; past and declined meetings are dimmed. A **Join** button appears from 10 minutes before the start. Click a meeting to open its card.
+- **Meeting card**: when a meeting starts, a card appears on the monitor where your mouse pointer is, above everything including full-screen apps. It shows the title and time, who accepted, said maybe, declined or hasn't replied, and the topics (the invite's description and attachments, without the dial-in boilerplate). **Join** opens Zoom or Microsoft Teams directly in their apps and Google Meet, Webex or any other link in your browser; **Close** (Esc) dismisses it, and it goes away by itself when the meeting ends. The card never takes keyboard focus, so it can't swallow what you are typing. No card for all-day events or meetings you declined.
 - **Switchable lists**: click the list title.
 - **Due dates**: Today / Tomorrow / Next Week / pick a date. Badges show overdue, today and tomorrow.
 - **Quick-add shortcuts**: `Write memo ~45m !tomorrow` (`~` sets the estimate; `!today`, `!tomorrow`, `!week` or `!2026-10-20` set the due date).
@@ -22,7 +24,7 @@ A native macOS floating panel for your **Google Tasks**: always on top, with sta
 - **Appearance** (⋯ menu or menu bar icon): Match System (follows macOS light/dark, live), Light, or Dark.
 - **Auto-updates** (Sparkle): Voilà checks daily for new versions and asks before installing ("Install Update" downloads, verifies and relaunches). **Check for Updates…** is in the ⋯ and menu bar menus.
 - **Show in Dock** (⋯ menu or menu bar icon): turn it off to remove Voilà from the Dock and ⌘-Tab. It keeps running and stays reachable from the menu bar icon.
-- **Menu bar icon** (☑︎ / ⏱ while running): show/close the panel, compact, refresh, Launch at Login, sign out.
+- **Menu bar icon** (☑︎ / ⏱ while running): show/close the panel, compact, refresh, Launch at Login, sign out. It also counts down to your meetings: a calendar with `12m` from an hour before the next one, then `23m left` while it is on, next to the running task's timer. The menu shows the current or next meeting with a Join shortcut.
 
 ### Where the data lives
 
@@ -37,11 +39,11 @@ Everything is in Google Tasks. Time tracking is a single line appended to the ta
 ## 1. Create your Google OAuth client (~5 min, one time)
 
 1. Go to <https://console.cloud.google.com/> and create a project (e.g. "Voila").
-2. **APIs & Services → Library**: search **Google Tasks API** and click **Enable**.
+2. **APIs & Services → Library**: search **Google Tasks API** and click **Enable**, then do the same for **Google Calendar API** (for the Today view and meeting cards).
 3. **APIs & Services → OAuth consent screen** (or "Google Auth Platform"):
    - User type **External**, app name "Voilà", your email as support/developer contact.
    - **Audience / Test users**: add your own Gmail address.
-   - Scopes: you can skip this; the app requests `.../auth/tasks` itself.
+   - Scopes: you can skip this; the app requests `.../auth/tasks` and `.../auth/calendar.events.readonly` (read-only) itself.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
    - Application type: **Desktop app**, name "Voilà Mac".
    - Copy the **Client ID** and **Client secret**.
@@ -51,9 +53,11 @@ Everything is in Google Tasks. Time tracking is a single line appended to the ta
 > - **Only ThoughtSpot colleagues**: create it with your Workspace account and choose user type **Internal**. No unverified-app warning, no 7-day expiry, no user cap. Your IT admin may need to allow it.
 > - **Anyone**: create it with a dedicated Gmail account (easier to hand over or share ownership via IAM), user type **External**.
 >
-> In "Testing" status, Google expires refresh tokens after 7 days, so you'd need to reconnect weekly. Set the publishing status to **In production** to avoid that. Without Google verification, an External app shows an "unverified app" warning and is capped at 100 users in total, because the Tasks scope is *sensitive*. Beyond that, submit it for verification (homepage, privacy policy, verified domain, demo video).
+> In "Testing" status, Google expires refresh tokens after 7 days, so you'd need to reconnect weekly. Set the publishing status to **In production** to avoid that. Without Google verification, an External app shows an "unverified app" warning and is capped at 100 users in total, because the Tasks and Calendar scopes are *sensitive*. Beyond that, submit it for verification (homepage, privacy policy, verified domain, demo video).
 
 The client secret and refresh token are stored in your macOS Keychain.
+
+If you connected Voilà before it had the Today view, open it (calendar button) and click **Connect Google Calendar**: Google asks once more, now with the read-only calendar permission. Meetings come from your primary calendar and refresh every 60 s.
 
 ### Embed the client in the app (so users just click "Connect")
 
