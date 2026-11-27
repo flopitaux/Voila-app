@@ -37,6 +37,7 @@ final class AppModel {
     let updater = Updater()
     let store: TaskStore
     let calendar: CalendarStore
+    let directory: DirectoryStore
     private(set) var tab = PanelTab(rawValue: UserDefaults.standard.string(forKey: "panelTab") ?? "") ?? .tasks
     private(set) var isCompact = UserDefaults.standard.bool(forKey: "compact")
     /// Whether the add-task field is expanded (otherwise only the + button shows).
@@ -92,7 +93,15 @@ final class AppModel {
     private init() {
         store = TaskStore(auth: auth)
         calendar = CalendarStore(auth: auth)
-        calendar.onChange = { [weak self] in self?.armMeetingAlarm() }
+        directory = DirectoryStore(auth: auth)
+        calendar.onChange = { [weak self] in
+            guard let self else { return }
+            self.armMeetingAlarm()
+            // Colleagues' job titles for the coming meetings, ready before their card appears.
+            Task { await self.directory.load(for: self.calendar.meetings) }
+        }
+        meetingCard.onJoin = { [weak self] meeting in self?.join(meeting) }
+        meetingCard.directory = directory
         // Starting a task means it's time to focus: collapse to the compact pill.
         store.onTaskStarted = { [weak self] in
             guard let self, !self.isCompact else { return }
@@ -123,9 +132,13 @@ final class AppModel {
         if isDemo {
             store.loadDemo()
             calendar.loadDemo()
+            directory.loadDemo()
             // VOILA_DEMO_CARD=m2 (or m2,m3 for meetings starting together) opens the card at launch.
             let ids = (ProcessInfo.processInfo.environment["VOILA_DEMO_CARD"] ?? "").split(separator: ",").map(String.init)
             meetingCard.present(calendar.meetings.filter { ids.contains($0.id) }, activate: false)
+            if ProcessInfo.processInfo.environment["VOILA_DEMO_MENUBAR"] == "1" {
+                DemoSnapshot.showMenuBarPanel(model: self)
+            }
             if let dir = ProcessInfo.processInfo.environment["VOILA_DEMO_SNAPSHOT"] {
                 DemoSnapshot.write(to: dir, model: self)
             }
@@ -183,12 +196,14 @@ final class AppModel {
         auth.signOut()
         store.reset()
         calendar.reset()
+        directory.reset()
     }
 
     /// After a successful sign-in: start fresh (it may be a different account) and sync.
     func didSignIn() {
         store.reset()
         calendar.reset()
+        directory.reset()
         startSync()
     }
 
@@ -218,9 +233,23 @@ final class AppModel {
         meetingCard.present([meeting], activate: true)
     }
 
-    /// Shows the card for meetings that just started, without taking keyboard focus.
+    /// Opens the meeting in its app or the browser. Joining means the task at hand stops.
+    func join(_ meeting: Meeting) {
+        pauseRunningTask()
+        meeting.link?.open()
+    }
+
+    /// A meeting takes over: stop the timer of the task in progress (it keeps its time).
+    private func pauseRunningTask() {
+        guard !isDemo, let task = store.focusTask, task.track.isRunning else { return }
+        Task { await store.pause(task) }
+    }
+
+    /// Shows the card for meetings that are due, without taking keyboard focus, and pauses the
+    /// running task when a meeting begins.
     private func announceDueMeetings() {
         guard showsCalendar, !isDemo else { return }
+        if !calendar.takeStarted(at: .now).isEmpty { pauseRunningTask() }
         let due = calendar.takeDue(at: .now)
         if !due.isEmpty { meetingCard.present(due, activate: false) }
     }
@@ -316,8 +345,9 @@ struct VoilaApp: App {
     @State private var model = AppModel.shared
 
     var body: some Scene {
+        // A window rather than a plain menu, so it can draw the day's timeline.
         MenuBarExtra {
-            MenuBarContent().environment(model)
+            MenuBarPanel().environment(model)
         } label: {
             let parts = model.menuBarParts
             if parts.isEmpty {
@@ -326,6 +356,7 @@ struct VoilaApp: App {
                 Image(nsImage: MenuBarLabel.image(parts))
             }
         }
+        .menuBarExtraStyle(.window)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Task") { model.startAddingTask() }
@@ -382,28 +413,12 @@ enum MenuBarLabel {
     }
 }
 
-private struct MenuBarContent: View {
+/// The settings and app commands, shown under "⋯" in the menu bar window.
+struct MenuBarSettingsItems: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Button(model.isPanelVisible ? "Close Panel" : "Show Panel") { model.togglePanel() }
-            .keyboardShortcut("t")
         Button(model.isCompact ? "Expand Panel" : "Compact Panel") { model.setCompact(!model.isCompact) }
-        if model.showsCalendar, let meeting = model.calendar.current(at: model.clock) ?? model.calendar.next(after: model.clock),
-           Calendar.current.isDateInToday(meeting.start) {
-            Divider()
-            Button("\(meeting.isOngoing(at: model.clock) ? "Now" : meeting.start.formatted(date: .omitted, time: .shortened)): \(meeting.title)") {
-                model.showMeeting(meeting)
-            }
-            if let link = meeting.link {
-                Button(link.joinTitle) { link.open() }
-            }
-            Divider()
-        }
-        if model.auth.isSignedIn {
-            Button("Refresh") { model.refreshNow() }
-                .keyboardShortcut("r")
-        }
         Divider()
         Toggle("Launch at Login", isOn: Binding(get: { model.launchAtLogin },
                                                set: { model.setLaunchAtLogin($0) }))
@@ -444,6 +459,11 @@ struct MeetingSettingsMenu: View {
                                                             set: { calendar.setShow(.tentative, $0) }))
             Toggle("Show Declined Meetings", isOn: Binding(get: { calendar.showDeclined },
                                                            set: { calendar.setShow(.declined, $0) }))
+            if model.auth.isSignedIn, !model.auth.hasDirectoryAccess {
+                Divider()
+                // Connected before job titles existed (or the permission was unticked).
+                Button("Show Colleagues' Job Titles…") { model.connectCalendar() }
+            }
         }
     }
 }

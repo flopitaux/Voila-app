@@ -106,7 +106,7 @@ struct TaskRow: View {
                 .fill(Theme.surface.opacity(isLater ? 0.6 : 1))
                 .overlay(shape.fill(track.isRunning ? Theme.tint.opacity(0.16) : cardTint))
                 .overlay(shape.strokeBorder(track.isRunning ? AnyShapeStyle(Theme.tint.opacity(0.45))
-                                                           : AnyShapeStyle(.primary.opacity(0.07))))
+                                                           : AnyShapeStyle(Theme.cardStroke)))
                 .shadow(color: .black.opacity(isLater ? 0 : 0.18), radius: 3, y: 1)
         }
         .contentShape(Rectangle())
@@ -193,7 +193,7 @@ struct TaskRow: View {
         }
         .padding(3)
         .background(Theme.background, in: Capsule())
-        .background(Capsule().strokeBorder(.primary.opacity(0.08)))
+        .background(Capsule().strokeBorder(Theme.cardStroke))
         .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
     }
 

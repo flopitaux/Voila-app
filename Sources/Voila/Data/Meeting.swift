@@ -30,8 +30,22 @@ struct Meeting: Identifiable, Hashable {
         var isSelf: Bool
         /// Email domain, lowercased ("acme.com").
         var domain: String? = nil
+        var email: String? = nil
         /// From another organization than the user's (false when that can't be told).
         var isExternal = false
+
+        /// A LinkedIn people search for this guest: their name plus their company, guessed from
+        /// the email domain ("lena@northwind.com" → "Lena Fischer northwind").
+        var linkedInSearchURL: URL? {
+            var keywords = name
+            if let domain, !Meeting.personalDomains.contains(domain),
+               let company = domain.split(separator: ".").dropLast().last {
+                keywords += " \(company)"
+            }
+            var comps = URLComponents(string: "https://www.linkedin.com/search/results/people/")
+            comps?.queryItems = [URLQueryItem(name: "keywords", value: keywords)]
+            return comps?.url
+        }
     }
 
     /// Whether every guest is from the user's own organization.
@@ -45,6 +59,8 @@ struct Meeting: Identifiable, Hashable {
     var end: Date
     /// The invite's description as plain text, without the conferencing boilerplate.
     var topics: String
+    /// Your own notes for this meeting, taken from a "Prep…" event that starts at the same time.
+    var prepNotes: String = ""
     var location: String?
     var organizer: String?
     var attendees: [Attendee]
@@ -108,7 +124,7 @@ extension Meeting {
         attendees = people.map {
             Attendee(name: $0.isSelf == true ? "You" : Self.name(of: $0),
                      response: Response(rawValue: $0.responseStatus ?? "") ?? .needsAction,
-                     isSelf: $0.isSelf == true, domain: Self.domain(of: $0.email))
+                     isSelf: $0.isSelf == true, domain: Self.domain(of: $0.email), email: $0.email)
         }
         myResponse = attendees.first(where: \.isSelf)?.response ?? .accepted
         link = MeetingLink.find(in: event)
@@ -130,7 +146,7 @@ extension Meeting {
     }
 
     /// With a personal address there is no "own organization" to compare with.
-    private static let personalDomains: Set<String> = [
+    fileprivate static let personalDomains: Set<String> = [
         "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com",
     ]
 
@@ -161,7 +177,8 @@ struct MeetingLink: Hashable {
     var joinTitle: String { service == .other ? "Join Meeting" : "Join \(service.rawValue)" }
 
     /// Conference data first (Meet and calendar add-ons), then known providers in the location
-    /// and description, then any link in the location.
+    /// and description, then any link in the location, then a link the description itself
+    /// presents as the way in ("Click to join the meeting: https://…").
     static func find(in event: GEvent) -> MeetingLink? {
         let video = event.conferenceData?.entryPoints?.first { $0.entryPointType == "video" }?.uri
         if let url = (video ?? event.hangoutLink).flatMap(URL.init(string:)) {
@@ -171,7 +188,8 @@ struct MeetingLink: Hashable {
         if let known = urls.first(where: { service(for: $0) != .other }) {
             return MeetingLink(url: known, service: service(for: known))
         }
-        return Self.urls(in: event.location).first.map { MeetingLink(url: $0, service: .other) }
+        return (Self.urls(in: event.location).first ?? MeetingText.joinURL(inHTML: event.description))
+            .map { MeetingLink(url: $0, service: .other) }
     }
 
     static func service(for url: URL) -> Service {
@@ -232,6 +250,47 @@ struct MeetingLink: Hashable {
 }
 
 enum MeetingText {
+    /// Words that introduce the meeting's link in an invite written by hand or by a booking tool.
+    private static let joinCues = ["join", "meeting link", "meeting url", "connect to the meeting", "attend the meeting",
+                                   "enter the meeting", "access the meeting", "launch meeting", "start the meeting"]
+
+    /// The link a description presents as the way into the meeting, for providers Voilà doesn't
+    /// know by name: either a link labelled "Join…" or a URL that follows such words closely.
+    /// Other links in a description (documents, agendas) are left alone.
+    static func joinURL(inHTML html: String?) -> URL? {
+        guard let html, !html.isEmpty else { return nil }
+        func hasCue(_ text: String) -> Bool { joinCues.contains(where: text.lowercased().contains) }
+        func web(_ string: String) -> URL? {
+            guard let url = URL(string: string.replacingOccurrences(of: "&amp;", with: "&")),
+                  url.scheme == "https" || url.scheme == "http" else { return nil }
+            return url
+        }
+        // <a href="https://…">Join the meeting</a>
+        if let anchor = try? NSRegularExpression(pattern: "<a\\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
+                                                 options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            for match in anchor.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
+                guard let href = Range(match.range(at: 1), in: html), let label = Range(match.range(at: 2), in: html)
+                else { continue }
+                let text = html[label].replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                if hasCue(text), !text.lowercased().hasPrefix("http"), let url = web(String(html[href])) { return url }
+            }
+        }
+        // "Click to join the meeting:\nhttps://…": the words come just before the URL.
+        let text = html.replacingOccurrences(of: "(?i)<br\\s*/?>|</p>|</div>|</li>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&nbsp;", with: " ")
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
+        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text), let url = match.url, url.scheme?.hasPrefix("http") == true
+            else { continue }
+            let before = text[..<range.lowerBound].suffix(90)
+            // Only the sentence leading up to the link counts, not an earlier paragraph.
+            let lead = before.components(separatedBy: "\n\n").last ?? ""
+            if hasCue(lead) { return url }
+        }
+        return nil
+    }
+
     /// Lines from which an invite is only dial-in details added by the conferencing tool.
     private static let boilerplate = [
         "is inviting you to a scheduled zoom meeting", "join zoom meeting", "microsoft teams meeting",

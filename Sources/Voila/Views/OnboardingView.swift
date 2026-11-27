@@ -21,7 +21,7 @@ struct OnboardingView: View {
 
                 if !model.auth.isPreconfigured {
                     VStack(alignment: .leading, spacing: 8) {
-                        step(1, "Create a project at console.cloud.google.com and enable the **Google Tasks API** and the **Google Calendar API**.")
+                        step(1, "Create a project at console.cloud.google.com and enable the **Google Tasks API**, the **Google Calendar API** and the **People API**.")
                         step(2, "Configure the OAuth consent screen (External, add yourself as a test user).")
                         step(3, "Create an **OAuth client ID** of type **Desktop app**, then paste it below.")
                         Link("Open Google Cloud Console →",
@@ -44,7 +44,7 @@ struct OnboardingView: View {
                 }
 
                 if model.auth.isPreconfigured {
-                    Label("Voilà reads and updates your Google Tasks, and reads your calendar's events. Nothing else.", systemImage: "lock.fill")
+                    Label("Voilà reads and updates your Google Tasks, and reads your calendar's events and your colleagues' directory profiles. Nothing else.", systemImage: "lock.fill")
                         .font(.voila(11))
                         .foregroundStyle(.secondary)
                 }

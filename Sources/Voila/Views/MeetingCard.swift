@@ -31,6 +31,10 @@ private final class FirstClickHostingView<Content: View>: NSHostingView<Content>
 final class MeetingCardController {
     private var panel: MeetingPanel?
     private var autoClose: Task<Void, Never>?
+    /// What Join does (the app opens the link and pauses the running task).
+    var onJoin: ((Meeting) -> Void)?
+    /// Colleagues' job titles, shown next to internal guests.
+    var directory: DirectoryStore?
 
     /// `activate`: the user asked for the card (give it keyboard focus) rather than it popping up.
     func present(_ meetings: [Meeting], activate: Bool) {
@@ -38,13 +42,13 @@ final class MeetingCardController {
         let panel = self.panel ?? MeetingPanel()
         self.panel = panel
         let card = MeetingCardView(meetings: meetings,
-                                   onJoin: { [weak self] meeting in meeting.link?.open(); self?.close() },
+                                   onJoin: { [weak self] meeting in self?.onJoin?(meeting); self?.close() },
                                    onOpenCalendar: { [weak self] meeting in
                                        if let url = meeting.calendarURL { NSWorkspace.shared.open(url) }
                                        self?.close()
                                    },
                                    onClose: { [weak self] in self?.close() })
-        let hosting = FirstClickHostingView(rootView: card)
+        let hosting = FirstClickHostingView(rootView: card.environment(\.directory, directory))
         hosting.safeAreaRegions = []
         panel.contentView = hosting
 
@@ -61,6 +65,8 @@ final class MeetingCardController {
         panel.invalidateShadow()
         if activate { panel.makeKeyAndOrderFront(nil) } else { panel.orderFrontRegardless() }
 
+        trackTitles()
+
         // A card for meetings still to end goes away by itself when the last one is over.
         autoClose?.cancel()
         if let end = meetings.map(\.end).max(), end > .now {
@@ -75,6 +81,28 @@ final class MeetingCardController {
         autoClose?.cancel()
         panel?.orderOut(nil)
     }
+
+    /// Job titles can arrive after the card is up and add lines: grow the window to fit,
+    /// keeping its top edge and horizontal centre where they are.
+    private func trackTitles() {
+        guard let directory else { return }
+        withObservationTracking { _ = directory.titles; _ = directory.photos } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, let panel = self.panel, panel.isVisible, let view = panel.contentView else { return }
+                let size = view.fittingSize
+                let frame = panel.frame
+                panel.setFrame(NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height,
+                                      width: size.width, height: size.height), display: true, animate: true)
+                panel.invalidateShadow()
+                self.trackTitles()
+            }
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// Where the card finds colleagues' job titles (nil: names only).
+    @Entry var directory: DirectoryStore? = nil
 }
 
 /// The card window's content: one meeting in full, or several meetings that start together,
@@ -111,7 +139,7 @@ struct MeetingCardView: View {
                                     .background(Theme.surface.opacity(0.55),
                                                 in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                                     .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .strokeBorder(.primary.opacity(0.08)))
+                                        .strokeBorder(Theme.cardStroke))
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)   // columns share the tallest one's height
@@ -127,9 +155,10 @@ struct MeetingCardView: View {
             }
         }
         .font(.voila(14))
+        .background(WindowDragArea())   // drag the card anywhere by its empty areas
         .background(Theme.background, in: shape)
         .clipShape(shape)
-        .overlay(shape.strokeBorder(.primary.opacity(0.12), lineWidth: 1))
+        .overlay(shape.strokeBorder(Theme.panelStroke, lineWidth: 1))
     }
 }
 
@@ -143,7 +172,17 @@ private struct MeetingDetail: View {
     var onOpenCalendar: () -> Void
     var onClose: () -> Void
 
-    private var hasTopics: Bool { !meeting.topics.isEmpty || !meeting.attachments.isEmpty }
+    @Environment(\.directory) private var directory
+    /// Which text the right column shows when the meeting has both.
+    @State private var showsPrep = false
+
+    private var hasTopics: Bool {
+        !meeting.topics.isEmpty || !meeting.prepNotes.isEmpty || !meeting.attachments.isEmpty
+    }
+    /// Long notes (a prep brief): the topics get most of a wider card.
+    private var hasLongTopics: Bool { max(meeting.topics.count, meeting.prepNotes.count) > 500 }
+    /// The invite's description and your prep notes both exist: show them as two tabs.
+    private var hasTabs: Bool { !meeting.topics.isEmpty && !meeting.prepNotes.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: stacked ? 18 : 30) {
@@ -152,14 +191,14 @@ private struct MeetingDetail: View {
             let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 18))
                                  : AnyLayout(HStackLayout(alignment: .top, spacing: 36))
             layout {
-                people.frame(maxWidth: .infinity, alignment: .topLeading)
+                people.frame(maxWidth: hasLongTopics && !stacked ? 300 : .infinity, alignment: .topLeading)
                 if hasTopics { topics.frame(maxWidth: .infinity, alignment: .topLeading) }
             }
             .frame(minHeight: stacked ? 0 : 220, alignment: .top)
             if stacked { Spacer(minLength: 0) }   // Join buttons line up at the bottom
             buttons
         }
-        .frame(width: stacked ? nil : (hasTopics ? 792 : 552), alignment: .leading)
+        .frame(width: stacked ? nil : (hasLongTopics ? 952 : hasTopics ? 792 : 552), alignment: .leading)
     }
 
     // MARK: Header
@@ -184,7 +223,10 @@ private struct MeetingDetail: View {
             HStack(spacing: stacked ? 12 : 18) {
                 Label("\(meeting.timeRange) · \(DurationFormat.short(meeting.duration))", systemImage: "clock")
                 if let link = meeting.link, link.service != .other {
-                    Label(link.service.rawValue, systemImage: "video")
+                    HStack(spacing: 5) {
+                        ServiceIcon(service: link.service, size: 18, fallback: "video")
+                        Text(link.service.rawValue)
+                    }
                 }
                 if let location = meeting.location, URL(string: location)?.scheme == nil {
                     Label(location, systemImage: "mappin.and.ellipse").lineLimit(1)
@@ -243,19 +285,22 @@ private struct MeetingDetail: View {
             if meeting.attendees.isEmpty {
                 Text("No guests on this event.").foregroundStyle(.secondary)
             } else if outside.isEmpty {
-                peopleBox(meeting.attendees, title: nil, symbol: nil, tint: .secondary)
+                peopleBox(meeting.attendees, title: nil, symbol: nil, tint: .secondary,
+                          withTitles: meeting.audience == .inside)
             } else {
                 // Mixed meeting: your colleagues first, then the guests from outside.
                 peopleBox(meeting.attendees.filter { !$0.isExternal }, title: "Internal", symbol: "building.2",
-                          tint: .secondary)
+                          tint: .secondary, withTitles: true)
                 peopleBox(outside, title: "External · \(meeting.externalDomains.prefix(3).joined(separator: ", "))",
-                          symbol: "globe", tint: Theme.tint)
+                          symbol: "globe", tint: Theme.tint, withLinkedIn: true)
             }
         }
     }
 
     /// One box of guests grouped by reply, optionally titled ("Internal 4").
-    private func peopleBox(_ members: [Meeting.Attendee], title: String?, symbol: String?, tint: Color) -> some View {
+    /// `withTitles`: colleagues, listed one per line with their job title from the directory.
+    private func peopleBox(_ members: [Meeting.Attendee], title: String?, symbol: String?, tint: Color,
+                           withTitles: Bool = false, withLinkedIn: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if let title {
                 HStack(spacing: 6) {
@@ -266,23 +311,25 @@ private struct MeetingDetail: View {
                 .font(.voila(12, .semibold))
                 .foregroundStyle(tint)
             }
-            group(.accepted, in: members, tint: Theme.done)
-            group(.tentative, in: members, tint: Theme.tint)
-            group(.declined, in: members, tint: Theme.overdue)
-            group(.needsAction, in: members, tint: .secondary)
+            group(.accepted, in: members, tint: Theme.done, withTitles: withTitles, withLinkedIn: withLinkedIn)
+            group(.tentative, in: members, tint: Theme.tint, withTitles: withTitles, withLinkedIn: withLinkedIn)
+            group(.declined, in: members, tint: Theme.overdue, withTitles: withTitles, withLinkedIn: withLinkedIn)
+            group(.needsAction, in: members, tint: .secondary, withTitles: withTitles, withLinkedIn: withLinkedIn)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.cardStroke))
     }
 
-    /// "✓ Accepted 4" with the names underneath.
+    /// "✓ Accepted 4" with the names underneath: on one line, or, for colleagues, one per line
+    /// with their job title ("Sarah Lin · VP Product").
+    /// Outside guests, also one per line, get a link that searches LinkedIn for them.
     @ViewBuilder
-    private func group(_ response: Meeting.Response, in all: [Meeting.Attendee], tint: Color) -> some View {
+    private func group(_ response: Meeting.Response, in all: [Meeting.Attendee], tint: Color,
+                       withTitles: Bool, withLinkedIn: Bool) -> some View {
         let members = all.filter { $0.response == response }
         if !members.isEmpty {
-            let shown = members.prefix(14).map(\.name).joined(separator: ", ")
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Image(systemName: response.symbol).foregroundStyle(tint)
@@ -290,12 +337,52 @@ private struct MeetingDetail: View {
                     Text("\(members.count)").monospacedDigit().foregroundStyle(.tertiary)
                 }
                 .font(.voila(13, .semibold))
-                Text(members.count > 14 ? "\(shown) and \(members.count - 14) more" : shown)
-                    .font(.voila(14))
-                    .lineSpacing(3)
-                    .foregroundStyle(response == .declined ? .secondary : .primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 23)
+                Group {
+                    if (withTitles && directory != nil) || withLinkedIn, !stacked || members.count <= 4 {
+                        let limit = stacked ? 4 : 10
+                        VStack(alignment: .leading, spacing: 7) {
+                            ForEach(Array(members.prefix(limit).enumerated()), id: \.offset) { _, member in
+                             HStack(spacing: 9) {
+                              Avatar(name: member.isSelf ? "You" : member.name,
+                                     photo: withTitles ? directory?.photo(for: member.email) : nil, size: 28)
+                              VStack(alignment: .leading, spacing: 1) {
+                                HStack(alignment: .center, spacing: 6) {
+                                    Text(member.name).layoutPriority(1)
+                                    if withLinkedIn, let url = member.linkedInSearchURL {
+                                        Button { NSWorkspace.shared.open(url) } label: {
+                                            LinkedInIcon(size: 22).contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .pointerStyle(.link)
+                                        .help("Search LinkedIn for \(member.name)")
+                                    }
+                                }
+                                .lineLimit(1)
+                                // "Senior AI Outcomes Manager • 725 Customer COE", as in Google Calendar.
+                                if withTitles, let title = directory?.title(for: member.email) {
+                                    Text(title)
+                                        .font(.voila(11.5))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .help(title)
+                                }
+                              }
+                             }
+                            }
+                            if members.count > limit {
+                                Text("and \(members.count - limit) more").foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        let shown = members.prefix(14).map(\.name).joined(separator: ", ")
+                        Text(members.count > 14 ? "\(shown) and \(members.count - 14) more" : shown)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .font(.voila(14))
+                .foregroundStyle(response == .declined ? .secondary : .primary)
+                .padding(.leading, 2)
             }
         }
     }
@@ -304,18 +391,19 @@ private struct MeetingDetail: View {
 
     private var topics: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionTitle("Topics", count: nil)
-            if !meeting.topics.isEmpty {
-                ScrollView {
-                    Text(meeting.topics)
-                        .font(.voila(14))
-                        .lineSpacing(5)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if hasTabs {
+                topicsPicker
+                // Both texts are laid out, so the card keeps one size whichever tab is showing.
+                ZStack(alignment: .topLeading) {
+                    notes(meeting.topics).opacity(showsPrep ? 0 : 1).allowsHitTesting(!showsPrep)
+                    notes(meeting.prepNotes).opacity(showsPrep ? 1 : 0).allowsHitTesting(showsPrep)
                 }
-                .scrollIndicators(.automatic)
-                .frame(maxHeight: stacked ? 120 : 320)
-                .fixedSize(horizontal: false, vertical: true)
+            } else if !meeting.prepNotes.isEmpty {
+                sectionTitle("Prep notes", count: nil)
+                notes(meeting.prepNotes)
+            } else {
+                sectionTitle("Description", count: nil)
+                if !meeting.topics.isEmpty { notes(meeting.topics) }
             }
             if !meeting.attachments.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -328,6 +416,40 @@ private struct MeetingDetail: View {
                 }
             }
         }
+    }
+
+    private func notes(_ text: String) -> some View {
+        ScrollView {
+            TopicsText(text: text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 10)
+        }
+        .scrollIndicators(.automatic)
+        .frame(maxHeight: stacked ? 120 : hasLongTopics ? 420 : 320)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// "Description | Prep notes" pill: the invite's own text, or your notes from the Prep event.
+    private var topicsPicker: some View {
+        HStack(spacing: 2) {
+            ForEach([false, true], id: \.self) { prep in
+                let selected = showsPrep == prep
+                Button { showsPrep = prep } label: {
+                    Label(prep ? "Prep notes" : "Description", systemImage: prep ? "note.text" : "text.alignleft")
+                        .font(.voila(12, .semibold))
+                        .foregroundStyle(selected ? AnyShapeStyle(Theme.tint2) : AnyShapeStyle(.secondary))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Theme.tint2.opacity(selected ? 0.18 : 0), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+            }
+        }
+        .padding(2)
+        .background(.primary.opacity(0.06), in: Capsule())
+        .padding(.top, -5)   // sits on the same line as the "People" title
     }
 
     private func sectionTitle(_ title: String, count: Int?) -> some View {
@@ -349,7 +471,10 @@ private struct MeetingDetail: View {
 
             if let link = meeting.link {
                 Button(action: onJoin) {
-                    Label(link.joinTitle, systemImage: "video.fill")
+                    HStack(spacing: 8) {
+                        ServiceIcon(service: link.service, size: 26)
+                        Text(link.joinTitle)
+                    }
                         .font(.voila(15, .bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -387,5 +512,55 @@ private struct MeetingDetail: View {
         .buttonStyle(.plain)
         .pointerStyle(.link)
         .keyboardShortcut(.cancelAction)
+    }
+}
+
+/// Topics laid out for reading at a glance: lines in capitals ("WHO IS IN THE ROOM") become
+/// section headings, "- " lines become bullets, the rest is plain text.
+private struct TopicsText: View {
+    var text: String
+
+    private enum Line {
+        case heading(String), bullet(String), body(String), gap
+    }
+
+    private var lines: [Line] {
+        text.components(separatedBy: .newlines).map { raw in
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { return .gap }
+            for marker in ["- ", "• ", "* ", "– "] where line.hasPrefix(marker) {
+                return .bullet(String(line.dropFirst(marker.count)))
+            }
+            let letters = line.filter(\.isLetter)
+            if letters.count >= 3, line.count <= 60, letters.allSatisfy(\.isUppercase) { return .heading(line) }
+            return .body(line)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                switch line {
+                case .heading(let title):
+                    Text(title)
+                        .font(.voila(11.5, .bold))
+                        .kerning(0.6)
+                        .foregroundStyle(Theme.tint2)
+                        .padding(.top, index == 0 ? 0 : 8)
+                case .bullet(let item):
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Text("•").foregroundStyle(.secondary)
+                        Text(item).fixedSize(horizontal: false, vertical: true)
+                    }
+                case .body(let content):
+                    Text(content).fixedSize(horizontal: false, vertical: true)
+                case .gap:
+                    Color.clear.frame(height: 2)
+                }
+            }
+        }
+        .font(.voila(14))
+        .lineSpacing(3)
+        .textSelection(.enabled)
     }
 }

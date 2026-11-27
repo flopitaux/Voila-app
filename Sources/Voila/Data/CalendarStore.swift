@@ -66,6 +66,8 @@ final class CalendarStore {
 
     /// Meetings already announced with a card, so each start is shown once.
     @ObservationIgnored private var announced: Set<String> = []
+    /// Meetings whose start was already acted on (running task paused).
+    @ObservationIgnored private var started: Set<String> = []
     /// Called after every successful load, so the app can re-arm the next card.
     @ObservationIgnored var onChange: (() -> Void)?
 
@@ -116,6 +118,17 @@ final class CalendarStore {
         return due
     }
 
+    /// Meetings that have just begun (whatever the card setting) and weren't reported yet:
+    /// the app pauses the running task for them.
+    func takeStarted(at date: Date) -> [Meeting] {
+        let begun = attending.filter {
+            $0.hasGuests && $0.start <= date && date < min($0.end, $0.start.addingTimeInterval(Self.announceWindow))
+                && !started.contains($0.occurrenceKey)
+        }
+        started.formUnion(begun.map(\.occurrenceKey))
+        return begun
+    }
+
     /// When the next card is due.
     func nextAnnouncement(after date: Date) -> Date? {
         guard let lead = reminderLead else { return nil }
@@ -148,8 +161,8 @@ final class CalendarStore {
     }
 
     /// A "Prep…" event starting at the same time as a meeting is your own preparation for it:
-    /// its description becomes the meeting's topics (ahead of the invite's own text) and the
-    /// Prep event itself disappears. With several meetings at that time, the one named in the
+    /// its description becomes the meeting's prep notes (kept apart from the invite's own
+    /// description) and the Prep event itself disappears. With several meetings at that time, the one named in the
     /// Prep title wins; a Prep event with no clear match is left as a normal event.
     static func mergingPrep(_ meetings: [Meeting]) -> [Meeting] {
         var result = meetings
@@ -158,15 +171,13 @@ final class CalendarStore {
             let companions = result.indices.filter {
                 !result[$0].isPrep && abs(result[$0].start.timeIntervalSince(prep.start)) < 60
             }
-            let named = companions.first {
-                let title = result[$0].title.lowercased()
-                return !subject.isEmpty && (title.contains(subject) || subject.contains(title))
-            }
+            // "Prep: Guidewire - Spotter Implementation Review" goes with
+            // "[Guidewire/ThoughtSpot] Spotter Implementation Review": most words in common wins.
+            let wanted = Self.words(subject)
+            let scored = companions.map { (index: $0, score: Self.words(result[$0].title).intersection(wanted).count) }
+            let named = scored.filter { $0.score > 0 }.max { $0.score < $1.score }?.index
             guard let target = named ?? (companions.count == 1 ? companions.first : nil) else { continue }
-            if !prep.topics.isEmpty {
-                result[target].topics = [prep.topics, result[target].topics].filter { !$0.isEmpty }
-                    .joined(separator: "\n\n")
-            }
+            result[target].prepNotes = prep.topics
             result[target].attachments = prep.attachments + result[target].attachments
             let key = prep.occurrenceKey
             result.removeAll { $0.occurrenceKey == key }
@@ -174,11 +185,17 @@ final class CalendarStore {
         return result
     }
 
+    /// The significant words of a title, for matching a Prep event with its meeting.
+    private static func words(_ text: String) -> Set<String> {
+        Set(text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count >= 3 })
+    }
+
     func reset() {
         meetings = []
         hasLoaded = false
         errorMessage = nil
         announced = []
+        started = []
     }
 
     #if DEBUG
@@ -188,7 +205,12 @@ final class CalendarStore {
         func at(_ minutes: Double) -> Date { now.addingTimeInterval(minutes * 60) }
         func people(_ list: [(String, Meeting.Response)]) -> [Meeting.Attendee] {
             [Meeting.Attendee(name: "You", response: .accepted, isSelf: true)]
-                + list.map { Meeting.Attendee(name: $0.0, response: $0.1, isSelf: false) }
+                + list.map {
+                    // "Chloé Martin" → chloe.martin@acme.com, so the sample directory has her title.
+                    let local = $0.0.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+                        .replacingOccurrences(of: " ", with: ".")
+                    return Meeting.Attendee(name: $0.0, response: $0.1, isSelf: false, email: "\(local)@acme.com")
+                }
         }
         meetings = [
             Meeting(id: "m1", title: "Team stand-up", start: at(-150), end: at(-135), topics: "", location: nil,
@@ -225,7 +247,7 @@ final class CalendarStore {
         // A private prep block at the same time as the customer demo: its notes become the topics.
         if let demo = meetings.first(where: { $0.id == "m3" }) {
             meetings.append(Meeting(id: "p3", title: "Prep: Customer demo", start: demo.start, end: demo.end,
-                                    topics: "My prep notes\n• Lead with the store-level drill-down\n• Lena asked about pricing last time: have the tiers ready\n• Ask Omar who signs off on the pilot",
+                                    topics: "NORTHWIND - CUSTOMER\n[Northwind/Acme] Retail dashboard demo\n\nTHE 30-SECOND VERSION\n- Lena Fischer (Head of Retail Analytics) plus one new attendee from finance.\n- Pilot of 40 stores since September; renewal decision in January.\n- Last call: asked for store-level drill-down and clearer pricing tiers.\n- Do on this call: show the drill-down, agree on the pilot sign-off.\n\nWHO IS IN THE ROOM\nLena Fischer - Head of Retail Analytics. Met twice; champion of the pilot.\nOmar Haddad - Finance. Not met yet; confirm his role at the start.\n\nACCOUNT AND PIPELINE\nPilot: 40 stores, 3 months\nExpansion: all 220 stores, decision in January\n\nADOPTION\nWeekly active users up from 18 to 31 since October.\nMost used: the stock-out dashboard.\n\nOPEN QUESTIONS\n- Who signs off on the pilot?\n- Is the finance team a new set of users?",
                                     location: nil, organizer: "You", attendees: [], myResponse: .accepted, link: nil,
                                     attachments: [], calendarURL: nil))
         }
@@ -252,6 +274,7 @@ final class CalendarStore {
         for m in meetings.indices {
             for a in meetings[m].attendees.indices where outsiders.contains(meetings[m].attendees[a].name) {
                 meetings[m].attendees[a].isExternal = true
+                meetings[m].attendees[a].domain = meetings[m].externalDomains.first ?? "northwind.com"
             }
         }
         meetings = Self.mergingPrep(meetings).sorted { $0.start < $1.start }

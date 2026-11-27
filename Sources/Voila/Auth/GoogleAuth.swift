@@ -32,7 +32,9 @@ final class GoogleAuth {
     static let tasksScope = "https://www.googleapis.com/auth/tasks"
     /// Read-only access to events, for the Today view and the meeting card.
     static let calendarScope = "https://www.googleapis.com/auth/calendar.events.readonly"
-    static let scope = "\(tasksScope) \(calendarScope)"
+    /// Read-only access to the organization's directory, for colleagues' job titles in the meeting card.
+    static let directoryScope = "https://www.googleapis.com/auth/directory.readonly"
+    static let scope = "\(tasksScope) \(calendarScope) \(directoryScope)"
 
     private(set) var clientID: String
     private(set) var clientSecret: String
@@ -141,7 +143,17 @@ final class GoogleAuth {
         accessToken = token.access_token
         expiry = Date().addingTimeInterval(TimeInterval(token.expires_in ?? 3600))
         setCalendarAccess(token.scope?.contains(Self.calendarScope) ?? false)
+        setDirectoryAccess(token.scope?.contains(Self.directoryScope) ?? false)
         isSignedIn = true
+    }
+
+    /// Whether colleagues' job titles can be looked up (not granted, unticked, or blocked by the
+    /// organization: the card then simply shows names).
+    private(set) var hasDirectoryAccess = UserDefaults.standard.bool(forKey: "directoryGranted")
+
+    func setDirectoryAccess(_ granted: Bool) {
+        hasDirectoryAccess = granted
+        UserDefaults.standard.set(granted, forKey: "directoryGranted")
     }
 
     func setCalendarAccess(_ granted: Bool) {
@@ -166,6 +178,7 @@ final class GoogleAuth {
         expiry = .distantPast
         Keychain.set(nil, for: "refreshToken")
         setCalendarAccess(false)
+        setDirectoryAccess(false)
         isSignedIn = false
     }
 

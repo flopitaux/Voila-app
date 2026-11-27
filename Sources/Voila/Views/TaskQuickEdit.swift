@@ -51,7 +51,7 @@ struct TaskQuickEdit: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 6)
                                 .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                                .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.primary.opacity(0.07)),
+                                .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.cardStroke),
                                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                                 .contentShape(Rectangle())
                         }
@@ -166,7 +166,7 @@ struct TaskQuickEdit: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
                             .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                            .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.primary.opacity(0.07)),
+                            .background(selected ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.cardStroke),
                                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                             .contentShape(Rectangle())
                     }

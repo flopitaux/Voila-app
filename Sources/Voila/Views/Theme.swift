@@ -24,11 +24,25 @@ enum Theme {
 
     static let panelRadius: CGFloat = 26
 
-    /// Panel background: soft warm white in light mode, deep plum-charcoal in dark mode.
+    /// Panel background: warm off-white in light mode, deep plum-charcoal in dark mode.
     static let background = Color(nsColor: NSColor(name: "VoilaBackground") { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? NSColor(srgbRed: 0.106, green: 0.102, blue: 0.122, alpha: 1)    // #1B1A1F
-            : NSColor(srgbRed: 0.984, green: 0.973, blue: 0.965, alpha: 1)    // #FBF8F6
+            : NSColor(srgbRed: 0.945, green: 0.925, blue: 0.910, alpha: 1)    // #F1ECE8: darker than the white cards
+    })
+
+    /// Outline of cards and boxes. Light mode needs a firmer line than dark to read on white.
+    static let cardStroke = Color(nsColor: NSColor(name: "VoilaCardStroke") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.07)
+            : NSColor.black.withAlphaComponent(0.16)
+    })
+
+    /// Outline of the panel and the meeting card themselves.
+    static let panelStroke = Color(nsColor: NSColor(name: "VoilaPanelStroke") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.12)
+            : NSColor.black.withAlphaComponent(0.24)
     })
 
     /// Task cards: a surface a step lighter than the background.

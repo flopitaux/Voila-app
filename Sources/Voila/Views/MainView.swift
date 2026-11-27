@@ -413,7 +413,7 @@ private struct CompletedFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(.primary.opacity(0.07)).frame(height: 1)
+            Rectangle().fill(Theme.cardStroke).frame(height: 1)
 
             if expanded && !tasks.isEmpty {
                 ScrollView {

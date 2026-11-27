@@ -24,7 +24,7 @@ struct RootView: View {
         // Fully opaque: whatever is behind the panel never shows through, in any window state.
         .background(Theme.background, in: shape)
         .clipShape(shape)
-        .overlay(shape.strokeBorder(.primary.opacity(0.12), lineWidth: 1))
+        .overlay(shape.strokeBorder(Theme.panelStroke, lineWidth: 1))
         .overlay(alignment: .top) { ErrorBanner() }
         .overlay { VoilaToast(trigger: model.store.celebration) }
         .animation(.smooth(duration: 0.3), value: model.showsTasks)

@@ -176,22 +176,32 @@ private struct MeetingRow: View {
                     .strikethrough(meeting.isDeclined)
                     .lineLimit(1)
                 if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.voila(11, isOngoing ? .semibold : .regular))
-                        .foregroundStyle(isOngoing ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        // The service's own icon, when its app is installed.
+                        if let link = meeting.link, link.service.appIcon != nil, !meeting.isDeclined {
+                            ServiceIcon(service: link.service, size: 14)
+                        }
+                        Text(subtitle)
+                            .font(.voila(11, isOngoing ? .semibold : .regular))
+                            .foregroundStyle(isOngoing ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
+                            .lineLimit(1)
+                    }
                 }
             }
 
             Spacer(minLength: 0)
 
             if canJoin, let link = meeting.link {
-                Button { link.open() } label: {
-                    Label("Join", systemImage: "video.fill")
+                Button { model.join(meeting) } label: {
+                    HStack(spacing: 4) {
+                        ServiceIcon(service: link.service, size: 16)
+                        Text("Join")
+                    }
                         .font(.voila(11, .semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
+                        .padding(.leading, 6)
+                        .padding(.trailing, 9)
+                        .padding(.vertical, 3)
                         .background(Theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -215,7 +225,7 @@ private struct MeetingRow: View {
                 .overlay(shape.fill(Theme.tint.opacity(isOngoing ? 0.14 : 0)))
                 .overlay(shape.fill(.primary.opacity(hovering ? 0.04 : 0)))
                 .overlay(shape.strokeBorder(isOngoing ? AnyShapeStyle(Theme.tint.opacity(0.45))
-                                                      : AnyShapeStyle(.primary.opacity(0.07))))
+                                                      : AnyShapeStyle(Theme.cardStroke)))
                 .shadow(color: .black.opacity(isPast || meeting.isDeclined ? 0 : 0.18), radius: 3, y: 1)
         }
         .contentShape(Rectangle())
@@ -257,6 +267,6 @@ private struct ConnectCalendarCard: View {
         }
         .padding(14)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.cardStroke))
     }
 }
