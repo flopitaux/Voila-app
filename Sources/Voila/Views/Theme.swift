@@ -2,11 +2,11 @@ import AppKit
 import SwiftUI
 
 extension Font {
-    /// Voilà's typeface: Helvetica Neue. Weights are capped at bold so text stays refined
-    /// (heavy weights look chunky). Falls back to the system font if Helvetica Neue is unavailable.
+    /// Voilà's typeface: the macOS interface font (San Francisco), so the app matches the rest of
+    /// the system. Weights are capped at bold so text stays refined (heavy weights look chunky).
     static func voila(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         let refined: Font.Weight = (weight == .heavy || weight == .black) ? .bold : weight
-        return .custom("Helvetica Neue", size: size).weight(refined)
+        return .system(size: size, weight: refined)
     }
 }
 
