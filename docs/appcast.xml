@@ -6,6 +6,17 @@
     <description>Voilà updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.4</title>
+      <pubDate>Fri, 27 Nov 2026 18:59:12 GMT</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>1.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>Signed with Developer ID and notarized by Apple: open the DMG and drag <strong>Voilà</strong> to <strong>Applications</strong>. Requires macOS 26 or later (Apple Silicon or Intel).</p>
+<p>SHA-256 <code class="notranslate">f0ddeb9ea49e602dc71285e1c619d7e7163b668eba2d78750d8b6c65245cd5f0</code></p>
+<p>See the <a href="https://github.com/flopitaux/Voila-app/commits/v1.4">commit history</a> for changes.</p>]]></description>
+      <enclosure url="https://github.com/flopitaux/Voila-app/releases/download/v1.4/Voila-1.4.dmg" type="application/octet-stream" sparkle:edSignature="lZ0MPOeK+Zbm8IBu0DqemCka3OFNxYQ/YUU1S2Gcc4lNMCwc5Oc2Kz8whcZiRQ9i6L37g/70O1FyB+/sTo9dBA==" length="6024449"/>
+    </item>
+    <item>
       <title>Version 1.3.1</title>
       <pubDate>Mon, 19 Oct 2026 18:20:26 GMT</pubDate>
       <sparkle:version>5</sparkle:version>
