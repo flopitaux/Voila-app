@@ -31,6 +31,7 @@ private final class FirstClickHostingView<Content: View>: NSHostingView<Content>
 final class MeetingCardController {
     private var panel: MeetingPanel?
     private var autoClose: Task<Void, Never>?
+    private var trackGeneration = 0
     /// What Join does (the app opens the link and pauses the running task).
     var onJoin: ((Meeting) -> Void)?
     /// Colleagues' job titles, shown next to internal guests.
@@ -86,15 +87,23 @@ final class MeetingCardController {
     /// keeping its top edge and horizontal centre where they are.
     private func trackTitles() {
         guard let directory else { return }
+        // One watcher per card: an older card's watcher stops when a newer card replaces it.
+        trackGeneration += 1
+        let generation = trackGeneration
+        watchTitles(directory, generation: generation)
+    }
+
+    private func watchTitles(_ directory: DirectoryStore, generation: Int) {
         withObservationTracking { _ = directory.titles; _ = directory.photos } onChange: { [weak self] in
             Task { @MainActor in
-                guard let self, let panel = self.panel, panel.isVisible, let view = panel.contentView else { return }
+                guard let self, generation == self.trackGeneration,
+                      let panel = self.panel, panel.isVisible, let view = panel.contentView else { return }
                 let size = view.fittingSize
                 let frame = panel.frame
                 panel.setFrame(NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height,
                                       width: size.width, height: size.height), display: true, animate: true)
                 panel.invalidateShadow()
-                self.trackTitles()
+                self.watchTitles(directory, generation: generation)
             }
         }
     }
@@ -484,6 +493,7 @@ private struct MeetingDetail: View {
                         .contentShape(Capsule())
                 }
                 .keyboardShortcut(stacked ? nil : .defaultAction)   // Return joins only when there is no choice
+                .help("Opens \(link.url.host() ?? link.url.absoluteString)")
             } else if meeting.calendarURL != nil {
                 Button(action: onOpenCalendar) {
                     Label("Open in Google Calendar", systemImage: "calendar")

@@ -48,12 +48,14 @@ final class DirectoryStore {
                 let person = try await lookUp(email)
                 if let photo = person.photo { photos[email] = photo }
                 titles[email] = person.title ?? ""
-            } catch let error as CalendarError where error.status == 403 {
-                // No directory permission (not granted, or the organization blocks it): stop asking.
+            } catch let error as CalendarError where error.isMissingScope {
+                // The directory permission isn't on this sign-in: stop asking until the user reconnects.
                 auth.setDirectoryAccess(false)
                 break
             } catch {
-                break   // offline or throttled: try again on a later refresh
+                // Offline, throttled, the People API not enabled yet, or blocked by the organization:
+                // keep the permission and try again on a later refresh.
+                break
             }
         }
         UserDefaults.standard.set(titles, forKey: "directoryTitles")
@@ -102,7 +104,10 @@ final class DirectoryStore {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 && retry { return try await lookUp(email, retry: false) }
         guard (200..<300).contains(status) else {
-            throw CalendarError(status: status, message: HTTPURLResponse.localizedString(forStatusCode: status))
+            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+                .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
+                ?? HTTPURLResponse.localizedString(forStatusCode: status)
+            throw CalendarError(status: status, message: message)
         }
         let people = try JSONDecoder().decode(SearchResponse.self, from: data).people ?? []
         let match = people.first { person in
@@ -115,6 +120,7 @@ final class DirectoryStore {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let photo = match?.photos?.first { $0.default != true }?.url
+            .flatMap { $0.lowercased().hasPrefix("https://") ? $0 : nil }
         return (parts.isEmpty ? nil : parts.joined(separator: " • "), photo)
     }
 

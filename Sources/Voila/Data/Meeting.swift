@@ -129,7 +129,7 @@ extension Meeting {
         myResponse = attendees.first(where: \.isSelf)?.response ?? .accepted
         link = MeetingLink.find(in: event)
         attachments = (event.attachments ?? []).compactMap(\.title)
-        calendarURL = event.htmlLink.flatMap(URL.init(string:))
+        calendarURL = event.htmlLink.flatMap(URL.init(string:)).flatMap { $0.isWebLink ? $0 : nil }
 
         // Internal or external: compare the guests' email domains with the user's own.
         let mine = attendees.first(where: \.isSelf)?.domain
@@ -180,8 +180,9 @@ struct MeetingLink: Hashable {
     /// and description, then any link in the location, then a link the description itself
     /// presents as the way in ("Click to join the meeting: https://…").
     static func find(in event: GEvent) -> MeetingLink? {
+        // Only web links are ever opened: an invite can't make Join launch another kind of URL.
         let video = event.conferenceData?.entryPoints?.first { $0.entryPointType == "video" }?.uri
-        if let url = (video ?? event.hangoutLink).flatMap(URL.init(string:)) {
+        if let url = (video ?? event.hangoutLink).flatMap(URL.init(string:)), url.isWebLink {
             return MeetingLink(url: url, service: service(for: url))
         }
         let urls = Self.urls(in: event.location) + Self.urls(in: event.description)
@@ -194,10 +195,11 @@ struct MeetingLink: Hashable {
 
     static func service(for url: URL) -> Service {
         let host = url.host()?.lowercased() ?? ""
+        func on(_ domains: String...) -> Bool { domains.contains { HostMatch.matches(host, $0) } }
         if host == "meet.google.com" { return .meet }
-        if host.hasSuffix("zoom.us") || host.hasSuffix("zoom.com") || host.hasSuffix("zoomgov.com") { return .zoom }
-        if host.hasSuffix("teams.microsoft.com") || host.hasSuffix("teams.live.com") { return .teams }
-        if host.hasSuffix("webex.com") { return .webex }
+        if on("zoom.us", "zoom.com", "zoomgov.com") { return .zoom }
+        if on("teams.microsoft.com", "teams.live.com") { return .teams }
+        if on("webex.com") { return .webex }
         return .other
     }
 
@@ -247,6 +249,18 @@ struct MeetingLink: Hashable {
         comps.host = nil
         return comps.url
     }
+}
+
+enum HostMatch {
+    /// True for the domain itself and its subdomains only: "acme.zoom.us" is on "zoom.us",
+    /// "notzoom.us" is not. (A plain suffix test would let look-alike domains pass as the service.)
+    static func matches(_ host: String, _ domain: String) -> Bool {
+        host == domain || host.hasSuffix("." + domain)
+    }
+}
+
+extension URL {
+    var isWebLink: Bool { scheme?.lowercased() == "https" || scheme?.lowercased() == "http" }
 }
 
 enum MeetingText {

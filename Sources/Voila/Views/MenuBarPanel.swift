@@ -3,6 +3,7 @@ import SwiftUI
 /// What opens from the menu bar icon: the day as a timeline, then the app's commands.
 struct MenuBarPanel: View {
     @Environment(AppModel.self) private var model
+    @State private var window: NSWindow?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,6 +31,7 @@ struct MenuBarPanel: View {
         .frame(width: 340)
         .font(.voila(13))
         .background(Theme.background)
+        .background(WindowReader { found in DispatchQueue.main.async { window = found } })
     }
 
     /// "Fri, Nov 27" and what is next: "Customer demo in 12 min".
@@ -99,9 +101,32 @@ struct MenuBarPanel: View {
     }
 
     /// Closes the menu bar window (it doesn't close by itself when a button inside is clicked).
+    /// It is the window this view sits in, never "whichever window has the keyboard", which
+    /// could be the task panel.
     private func dismiss() {
-        NSApp.keyWindow?.close()
+        window?.close()
     }
+}
+
+/// Reports the window a view ends up in.
+private struct WindowReader: NSViewRepresentable {
+    var onChange: (NSWindow?) -> Void
+
+    final class Probe: NSView {
+        var onChange: ((NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onChange?(window)
+        }
+    }
+
+    func makeNSView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.onChange = onChange
+        return probe
+    }
+
+    func updateNSView(_ nsView: Probe, context: Context) { nsView.onChange = onChange }
 }
 
 /// The day drawn to scale: hours down the side, one block per meeting, a line for now.
