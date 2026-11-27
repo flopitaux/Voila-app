@@ -139,6 +139,7 @@ private struct Header: View {
                     Toggle("Show in Dock", isOn: Binding(get: { model.showInDock },
                                                         set: { model.setShowInDock($0) }))
                     AppearancePicker()
+                    if model.showsCalendar { MeetingSettingsMenu() }
                     Divider()
                     Button("Minimize") { model.minimizePanel() }
                         .keyboardShortcut("m")

@@ -28,6 +28,13 @@ struct Meeting: Identifiable, Hashable {
         var name: String
         var response: Response
         var isSelf: Bool
+        /// Email domain, lowercased ("acme.com").
+        var domain: String? = nil
+    }
+
+    /// Whether every guest is from the user's own organization.
+    enum Audience: String {
+        case inside = "Internal", outside = "External"
     }
 
     let id: String
@@ -44,11 +51,30 @@ struct Meeting: Identifiable, Hashable {
     var link: MeetingLink?
     var attachments: [String]
     var calendarURL: URL?
+    /// Nil when it can't be told: no other guests, or the user's own address is a personal one.
+    var audience: Audience? = nil
+    /// The other organizations in the meeting, for "External · northwind.com".
+    var externalDomains: [String] = []
 
     /// Distinguishes a rescheduled meeting from its earlier slot.
     var occurrenceKey: String { "\(id)@\(Int(start.timeIntervalSince1970))" }
     var duration: TimeInterval { end.timeIntervalSince(start) }
     var isDeclined: Bool { myResponse == .declined }
+    /// "Prep", "Prep: Roadmap review", "Prep – demo"… (but not "Prepare" or "Preparation").
+    var isPrep: Bool {
+        let lower = title.lowercased()
+        guard lower.hasPrefix("prep") else { return false }
+        return lower.dropFirst(4).first.map { !$0.isLetter } ?? true
+    }
+    /// What the prep is for: the title without "Prep" and punctuation, lowercased.
+    var prepSubject: String {
+        guard isPrep else { return "" }
+        return title.dropFirst(4).lowercased()
+            .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            .replacingOccurrences(of: "^for\\s+", with: "", options: .regularExpression)
+    }
+    /// False for a block on your own calendar with nobody else in it.
+    var hasGuests: Bool { attendees.contains { !$0.isSelf } }
 
     func isOngoing(at date: Date) -> Bool { start <= date && date < end }
     func attendees(_ response: Response) -> [Attendee] { attendees.filter { $0.response == response } }
@@ -80,12 +106,34 @@ extension Meeting {
         attendees = people.map {
             Attendee(name: $0.isSelf == true ? "You" : Self.name(of: $0),
                      response: Response(rawValue: $0.responseStatus ?? "") ?? .needsAction,
-                     isSelf: $0.isSelf == true)
+                     isSelf: $0.isSelf == true, domain: Self.domain(of: $0.email))
         }
         myResponse = attendees.first(where: \.isSelf)?.response ?? .accepted
         link = MeetingLink.find(in: event)
         attachments = (event.attachments ?? []).compactMap(\.title)
         calendarURL = event.htmlLink.flatMap(URL.init(string:))
+
+        // Internal or external: compare the guests' email domains with the user's own.
+        let mine = attendees.first(where: \.isSelf)?.domain
+            ?? (event.organizer?.isSelf == true ? Self.domain(of: event.organizer?.email) : nil)
+        let others = attendees.filter { !$0.isSelf }.compactMap(\.domain)
+        if let mine, !Self.personalDomains.contains(mine), !others.isEmpty {
+            var seen = Set<String>()
+            externalDomains = others.filter { $0 != mine && seen.insert($0).inserted }
+            audience = externalDomains.isEmpty ? .inside : .outside
+        }
+    }
+
+    /// With a personal address there is no "own organization" to compare with.
+    private static let personalDomains: Set<String> = [
+        "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com",
+    ]
+
+    /// "Jane@Acme.com" → "acme.com"; nil for Google's group and room calendars.
+    private static func domain(of email: String?) -> String? {
+        guard let domain = email?.split(separator: "@").last?.lowercased(), email?.contains("@") == true,
+              !domain.hasSuffix("calendar.google.com") else { return nil }
+        return domain
     }
 
     /// "Display Name", or "jane.doe@x.com" → "Jane Doe" when Google gives no name.

@@ -1,8 +1,12 @@
 import SwiftUI
 
-/// Today's meetings in time order, shown above the task list in the Today view.
+/// Today's (or tomorrow's) meetings in time order, shown above the task list in the Today view.
 struct TodayAgenda: View {
     @Environment(AppModel.self) private var model
+    /// Tomorrow is a peek: the view opens on today every time.
+    @State private var showsTomorrow: Bool
+
+    init(startOnTomorrow: Bool = false) { _showsTomorrow = State(initialValue: startOnTomorrow) }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
@@ -13,9 +17,10 @@ struct TodayAgenda: View {
     @ViewBuilder
     private func content(now: Date) -> some View {
         let calendar = model.calendar
-        let meetings = calendar.todayMeetings(at: now)
+        let day = showsTomorrow ? (Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now) : now
+        let meetings = calendar.meetings(on: day)
         VStack(spacing: 6) {
-            header(now: now, count: meetings.filter { !$0.isDeclined }.count)
+            header(day: day, count: meetings.filter { !$0.isDeclined }.count)
 
             if !model.showsCalendar {
                 ConnectCalendarCard()
@@ -24,7 +29,9 @@ struct TodayAgenda: View {
             } else if !calendar.hasLoaded {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.vertical, 12)
             } else if meetings.isEmpty {
-                note("No meetings today", symbol: "sparkles", tint: .secondary)
+                note(showsTomorrow ? "No meetings tomorrow" : "No meetings today", symbol: "sparkles", tint: .secondary)
+            } else if showsTomorrow {
+                ForEach(meetings, id: \.occurrenceKey) { MeetingRow(meeting: $0, now: now) }
             } else {
                 // The "now" line sits before the first meeting still to come (or after the last one),
                 // unless a meeting is on: its own row is highlighted instead.
@@ -38,21 +45,46 @@ struct TodayAgenda: View {
             }
         }
         .padding(.bottom, 8)
+        .animation(.smooth(duration: 0.25), value: showsTomorrow)
     }
 
-    private func header(now: Date, count: Int) -> some View {
+    private func header(day: Date, count: Int) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "calendar").font(.system(size: 10, weight: .semibold))
-            Text(now.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)))
+            Text(day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
             if model.showsCalendar, model.calendar.hasLoaded {
                 Text("\(count)").monospacedDigit().foregroundStyle(.tertiary)
             }
             Spacer()
+            if model.showsCalendar { dayPicker }
         }
         .font(.voila(12, .semibold))
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
         .padding(.top, 2)
+    }
+
+    /// "Today | Tomorrow" pill.
+    private var dayPicker: some View {
+        HStack(spacing: 2) {
+            ForEach([false, true], id: \.self) { tomorrow in
+                let selected = showsTomorrow == tomorrow
+                Button { showsTomorrow = tomorrow } label: {
+                    Text(tomorrow ? "Tomorrow" : "Today")
+                        .font(.voila(11, .semibold))
+                        .foregroundStyle(selected ? AnyShapeStyle(Theme.tint2) : AnyShapeStyle(.secondary))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
+                        .background(Theme.tint2.opacity(selected ? 0.18 : 0), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+            }
+        }
+        .padding(2)
+        .background(.primary.opacity(0.05), in: Capsule())
     }
 
     private func note(_ text: String, symbol: String, tint: Color) -> some View {
@@ -113,6 +145,7 @@ private struct MeetingRow: View {
         }
         if meeting.isDeclined { return "Declined" }
         var parts: [String] = []
+        if let audience = meeting.audience { parts.append(audience.rawValue) }
         if let link = meeting.link, link.service != .other { parts.append(link.service.rawValue) }
         else if let location = meeting.location { parts.append(location) }
         let others = meeting.attendees.filter { !$0.isSelf }.count

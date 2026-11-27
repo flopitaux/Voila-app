@@ -123,9 +123,11 @@ final class AppModel {
         if isDemo {
             store.loadDemo()
             calendar.loadDemo()
-            if let name = ProcessInfo.processInfo.environment["VOILA_DEMO_CARD"],
-               let meeting = calendar.meetings.first(where: { $0.id == name }) {
-                meetingCard.present([meeting], activate: false)
+            // VOILA_DEMO_CARD=m2 (or m2,m3 for meetings starting together) opens the card at launch.
+            let ids = (ProcessInfo.processInfo.environment["VOILA_DEMO_CARD"] ?? "").split(separator: ",").map(String.init)
+            meetingCard.present(calendar.meetings.filter { ids.contains($0.id) }, activate: false)
+            if let dir = ProcessInfo.processInfo.environment["VOILA_DEMO_SNAPSHOT"] {
+                DemoSnapshot.write(to: dir, model: self)
             }
         }
         #endif
@@ -405,6 +407,7 @@ private struct MenuBarContent: View {
         Toggle("Show in Dock", isOn: Binding(get: { model.showInDock },
                                             set: { model.setShowInDock($0) }))
         AppearancePicker()
+        if model.showsCalendar { MeetingSettingsMenu() }
         if model.auth.isSignedIn {
             Button("Sign Out of Google") { model.signOut() }
         }
@@ -415,6 +418,30 @@ private struct MenuBarContent: View {
         }
         Button("Quit Voilà") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+}
+
+/// "Meetings ▸" submenu: when the card appears, and which of your replies keep a meeting on screen.
+struct MeetingSettingsMenu: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let calendar = model.calendar
+        Menu("Meetings") {
+            Picker("Show Meeting Card", selection: Binding(get: { calendar.reminderLead ?? -1 },
+                                                           set: { calendar.setReminderLead($0 < 0 ? nil : $0) })) {
+                ForEach(CalendarStore.reminderChoices, id: \.title) { choice in
+                    Text(choice.title).tag(choice.lead ?? -1)
+                }
+            }
+            Divider()
+            Toggle("Show Unanswered Meetings", isOn: Binding(get: { calendar.showUnanswered },
+                                                             set: { calendar.setShow(.needsAction, $0) }))
+            Toggle("Show Tentative Meetings", isOn: Binding(get: { calendar.showTentative },
+                                                            set: { calendar.setShow(.tentative, $0) }))
+            Toggle("Show Declined Meetings", isOn: Binding(get: { calendar.showDeclined },
+                                                           set: { calendar.setShow(.declined, $0) }))
+        }
     }
 }
 

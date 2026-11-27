@@ -22,6 +22,48 @@ final class CalendarStore {
     /// Shown inline in the Today view (background refreshes never raise a banner).
     private(set) var errorMessage: String?
 
+    // MARK: Settings (Meetings menu)
+
+    /// How long before the start the card appears: 0 = at start time, nil = never.
+    private(set) var reminderLead: TimeInterval? = {
+        let stored = UserDefaults.standard.object(forKey: "meetingReminderLead") as? Double ?? 0
+        return stored < 0 ? nil : stored
+    }()
+    /// Which replies of yours keep a meeting on screen. Hidden meetings are ignored everywhere.
+    private(set) var showDeclined = UserDefaults.standard.bool(forKey: "showDeclinedMeetings")
+    private(set) var showUnanswered = UserDefaults.standard.object(forKey: "showUnansweredMeetings") as? Bool ?? true
+    private(set) var showTentative = UserDefaults.standard.object(forKey: "showTentativeMeetings") as? Bool ?? true
+
+    static let reminderChoices: [(title: String, lead: TimeInterval?)] = [
+        ("At Start Time", 0), ("1 Minute Before", 60), ("2 Minutes Before", 120), ("5 Minutes Before", 300),
+        ("10 Minutes Before", 600), ("Never", nil),
+    ]
+
+    func setReminderLead(_ lead: TimeInterval?) {
+        reminderLead = lead
+        UserDefaults.standard.set(lead ?? -1, forKey: "meetingReminderLead")
+        onChange?()   // re-arm the next card
+    }
+
+    func setShow(_ response: Meeting.Response, _ show: Bool) {
+        switch response {
+        case .declined: showDeclined = show; UserDefaults.standard.set(show, forKey: "showDeclinedMeetings")
+        case .needsAction: showUnanswered = show; UserDefaults.standard.set(show, forKey: "showUnansweredMeetings")
+        case .tentative: showTentative = show; UserDefaults.standard.set(show, forKey: "showTentativeMeetings")
+        case .accepted: break
+        }
+        onChange?()
+    }
+
+    func shows(_ response: Meeting.Response) -> Bool {
+        switch response {
+        case .accepted: true
+        case .declined: showDeclined
+        case .needsAction: showUnanswered
+        case .tentative: showTentative
+        }
+    }
+
     /// Meetings already announced with a card, so each start is shown once.
     @ObservationIgnored private var announced: Set<String> = []
     /// Called after every successful load, so the app can re-arm the next card.
@@ -37,12 +79,14 @@ final class CalendarStore {
 
     // MARK: - Derived
 
-    func todayMeetings(at date: Date = .now) -> [Meeting] {
-        meetings.filter { Calendar.current.isDate($0.start, inSameDayAs: date) }
+    /// Meetings of one day, as filtered by the Meetings settings.
+    func meetings(on day: Date) -> [Meeting] {
+        meetings.filter { shows($0.myResponse) && Calendar.current.isDate($0.start, inSameDayAs: day) }
     }
 
-    /// Meetings the user is expected at (declined ones are shown, never announced).
-    private var attending: [Meeting] { meetings.filter { !$0.isDeclined } }
+    /// Meetings the user is expected at: shown by the settings and not declined. Declined ones,
+    /// even when shown in the list, never get a card or a countdown.
+    private var attending: [Meeting] { meetings.filter { shows($0.myResponse) && !$0.isDeclined } }
 
     func current(at date: Date) -> Meeting? {
         attending.filter { $0.isOngoing(at: date) }.max { $0.start < $1.start }
@@ -60,10 +104,12 @@ final class CalendarStore {
         return nil
     }
 
-    /// Meetings that just started and haven't been announced yet; marks them announced.
+    /// Meetings whose card is due (start time minus the reminder setting) and hasn't been shown
+    /// yet; marks them announced. Events with nobody but the user never get a card.
     func takeDue(at date: Date) -> [Meeting] {
+        guard let lead = reminderLead else { return [] }
         let due = attending.filter {
-            $0.start <= date && date < min($0.end, $0.start.addingTimeInterval(Self.announceWindow))
+            $0.hasGuests && $0.start.addingTimeInterval(-lead) <= date && date < min($0.end, $0.start.addingTimeInterval(Self.announceWindow))
                 && !announced.contains($0.occurrenceKey)
         }
         announced.formUnion(due.map(\.occurrenceKey))
@@ -72,7 +118,10 @@ final class CalendarStore {
 
     /// When the next card is due.
     func nextAnnouncement(after date: Date) -> Date? {
-        attending.first { $0.start > date && !announced.contains($0.occurrenceKey) }?.start
+        guard let lead = reminderLead else { return nil }
+        return attending.lazy.filter { $0.hasGuests && !self.announced.contains($0.occurrenceKey) }
+            .map { $0.start.addingTimeInterval(-lead) }
+            .first { $0 > date }
     }
 
     // MARK: - Loading
@@ -83,7 +132,7 @@ final class CalendarStore {
         let from = cal.startOfDay(for: .now)
         guard let to = cal.date(byAdding: .day, value: 2, to: from) else { return }
         do {
-            meetings = try await api.events(from: from, to: to).compactMap(Meeting.init)
+            meetings = Self.mergingPrep(try await api.events(from: from, to: to).compactMap(Meeting.init))
             hasLoaded = true
             errorMessage = nil
             onChange?()
@@ -96,6 +145,33 @@ final class CalendarStore {
             if error is URLError, hasLoaded { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// A "Prep…" event starting at the same time as a meeting is your own preparation for it:
+    /// its description becomes the meeting's topics (ahead of the invite's own text) and the
+    /// Prep event itself disappears. With several meetings at that time, the one named in the
+    /// Prep title wins; a Prep event with no clear match is left as a normal event.
+    static func mergingPrep(_ meetings: [Meeting]) -> [Meeting] {
+        var result = meetings
+        for prep in meetings where prep.isPrep {
+            let subject = prep.prepSubject
+            let companions = result.indices.filter {
+                !result[$0].isPrep && abs(result[$0].start.timeIntervalSince(prep.start)) < 60
+            }
+            let named = companions.first {
+                let title = result[$0].title.lowercased()
+                return !subject.isEmpty && (title.contains(subject) || subject.contains(title))
+            }
+            guard let target = named ?? (companions.count == 1 ? companions.first : nil) else { continue }
+            if !prep.topics.isEmpty {
+                result[target].topics = [prep.topics, result[target].topics].filter { !$0.isEmpty }
+                    .joined(separator: "\n\n")
+            }
+            result[target].attachments = prep.attachments + result[target].attachments
+            let key = prep.occurrenceKey
+            result.removeAll { $0.occurrenceKey == key }
+        }
+        return result
     }
 
     func reset() {
@@ -119,7 +195,7 @@ final class CalendarStore {
                     organizer: "Maya Cohen", attendees: people([("Maya Cohen", .accepted), ("Tom Reed", .accepted)]),
                     myResponse: .accepted,
                     link: MeetingLink(url: URL(string: "https://meet.google.com/abc-defg-hij")!, service: .meet),
-                    attachments: [], calendarURL: nil),
+                    attachments: [], calendarURL: nil, audience: .inside),
             Meeting(id: "m2", title: "Q4 roadmap review", start: at(-12), end: at(33),
                     topics: "• Where we landed on the Q4 priorities\n• Open risks on the analytics launch\n• Hiring plan for the design team\n\nPlease read the memo before the call.",
                     location: "Paris – Salle Monet", organizer: "Sarah Lin",
@@ -128,23 +204,49 @@ final class CalendarStore {
                                        ("Priya Shah", .needsAction)]),
                     myResponse: .accepted,
                     link: MeetingLink(url: URL(string: "https://acme.zoom.us/j/93812345678?pwd=demo")!, service: .zoom),
-                    attachments: ["Q4 strategy memo", "Roadmap – draft v3"], calendarURL: nil),
+                    attachments: ["Q4 strategy memo", "Roadmap – draft v3"], calendarURL: nil, audience: .inside),
             Meeting(id: "m3", title: "Customer demo: Northwind", start: at(58), end: at(118),
                     topics: "Walk through the retail dashboard, then questions.", location: nil, organizer: "You",
                     attendees: people([("Lena Fischer", .accepted), ("Omar Haddad", .needsAction)]),
                     myResponse: .accepted,
                     link: MeetingLink(url: URL(string: "https://teams.microsoft.com/l/meetup-join/demo")!, service: .teams),
-                    attachments: [], calendarURL: nil),
+                    attachments: [], calendarURL: nil, audience: .outside, externalDomains: ["northwind.com"]),
             Meeting(id: "m4", title: "Vendor pitch", start: at(150), end: at(180), topics: "", location: nil,
                     organizer: "Jules Bernard", attendees: people([("Jules Bernard", .accepted)]),
-                    myResponse: .declined, link: nil, attachments: [], calendarURL: nil),
+                    myResponse: .declined, link: nil, attachments: [], calendarURL: nil, audience: .inside),
             Meeting(id: "m5", title: "1:1 with Sarah", start: at(200), end: at(230), topics: "", location: nil,
                     organizer: "Sarah Lin", attendees: people([("Sarah Lin", .accepted)]),
                     myResponse: .needsAction,
                     link: MeetingLink(url: URL(string: "https://meet.google.com/xyz-abcd-efg")!, service: .meet),
-                    attachments: [], calendarURL: nil),
+                    attachments: [], calendarURL: nil, audience: .inside),
         ]
         .filter { Calendar.current.isDate($0.start, inSameDayAs: now) || $0.isOngoing(at: now) }
+        // A private prep block at the same time as the customer demo: its notes become the topics.
+        if let demo = meetings.first(where: { $0.id == "m3" }) {
+            meetings.append(Meeting(id: "p3", title: "Prep: Customer demo", start: demo.start, end: demo.end,
+                                    topics: "My prep notes\n• Lead with the store-level drill-down\n• Lena asked about pricing last time: have the tiers ready\n• Ask Omar who signs off on the pilot",
+                                    location: nil, organizer: "You", attendees: [], myResponse: .accepted, link: nil,
+                                    attachments: [], calendarURL: nil))
+        }
+        // Tomorrow, at fixed times.
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
+        func next(_ hour: Double) -> Date { tomorrow.addingTimeInterval(hour * 3600) }
+        meetings += [
+            Meeting(id: "t1", title: "Weekly product sync", start: next(9.5), end: next(10.5), topics: "", location: nil,
+                    organizer: "Maya Cohen", attendees: people([("Maya Cohen", .accepted), ("Tom Reed", .accepted), ("Arjun Patel", .tentative)]),
+                    myResponse: .accepted,
+                    link: MeetingLink(url: URL(string: "https://meet.google.com/abc-defg-hij")!, service: .meet),
+                    attachments: [], calendarURL: nil, audience: .inside),
+            Meeting(id: "t2", title: "Design review: onboarding", start: next(11), end: next(11.75), topics: "", location: "Paris – Salle Monet",
+                    organizer: "Chloé Martin", attendees: people([("Chloé Martin", .accepted), ("Diego Alvarez", .accepted)]),
+                    myResponse: .tentative, link: nil, attachments: [], calendarURL: nil, audience: .inside),
+            Meeting(id: "t3", title: "Partner check-in: Contoso", start: next(15), end: next(15.5), topics: "", location: nil,
+                    organizer: "You", attendees: people([("Hana Sato", .accepted)]),
+                    myResponse: .accepted,
+                    link: MeetingLink(url: URL(string: "https://acme.zoom.us/j/93812345678?pwd=demo")!, service: .zoom),
+                    attachments: [], calendarURL: nil, audience: .outside, externalDomains: ["contoso.com"]),
+        ]
+        meetings = Self.mergingPrep(meetings).sorted { $0.start < $1.start }
         hasLoaded = true
     }
     #endif

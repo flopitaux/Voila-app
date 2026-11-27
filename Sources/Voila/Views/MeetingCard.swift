@@ -26,43 +26,20 @@ private final class FirstClickHostingView<Content: View>: NSHostingView<Content>
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// Shows one meeting card at a time; meetings starting together queue up behind each other.
+/// Shows the meeting card. Meetings that start together share one card.
 @MainActor
 final class MeetingCardController {
     private var panel: MeetingPanel?
-    private var queue: [Meeting] = []
     private var autoClose: Task<Void, Never>?
 
     /// `activate`: the user asked for the card (give it keyboard focus) rather than it popping up.
     func present(_ meetings: [Meeting], activate: Bool) {
-        guard let first = meetings.first else { return }
-        if activate {
-            queue = []
-            show(first, activate: true)
-        } else if panel?.isVisible == true {
-            queue += meetings
-        } else {
-            queue = Array(meetings.dropFirst())
-            show(first, activate: false)
-        }
-    }
-
-    func close() {
-        autoClose?.cancel()
-        panel?.orderOut(nil)
-        // Next meeting that started at the same time, if it is still on.
-        while !queue.isEmpty {
-            let next = queue.removeFirst()
-            if next.end > .now { show(next, activate: false); break }
-        }
-    }
-
-    private func show(_ meeting: Meeting, activate: Bool) {
+        guard !meetings.isEmpty else { return }
         let panel = self.panel ?? MeetingPanel()
         self.panel = panel
-        let card = MeetingCardView(meeting: meeting,
-                                   onJoin: { [weak self] in meeting.link?.open(); self?.close() },
-                                   onOpenCalendar: { [weak self] in
+        let card = MeetingCardView(meetings: meetings,
+                                   onJoin: { [weak self] meeting in meeting.link?.open(); self?.close() },
+                                   onOpenCalendar: { [weak self] meeting in
                                        if let url = meeting.calendarURL { NSWorkspace.shared.open(url) }
                                        self?.close()
                                    },
@@ -84,58 +61,127 @@ final class MeetingCardController {
         panel.invalidateShadow()
         if activate { panel.makeKeyAndOrderFront(nil) } else { panel.orderFrontRegardless() }
 
-        // A card for a meeting still to end goes away by itself when the meeting is over.
+        // A card for meetings still to end goes away by itself when the last one is over.
         autoClose?.cancel()
-        if meeting.end > .now {
+        if let end = meetings.map(\.end).max(), end > .now {
             autoClose = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(meeting.end.timeIntervalSinceNow))
+                try? await Task.sleep(for: .seconds(end.timeIntervalSinceNow))
                 if !Task.isCancelled { self?.close() }
             }
         }
     }
+
+    func close() {
+        autoClose?.cancel()
+        panel?.orderOut(nil)
+    }
 }
 
-/// The card: what the meeting is, who is coming, what it is about, and a Join button.
+/// The card window's content: one meeting in full, or several meetings that start together,
+/// side by side, each with its own Join button.
 struct MeetingCardView: View {
+    var meetings: [Meeting]
+    var onJoin: (Meeting) -> Void
+    var onOpenCalendar: (Meeting) -> Void
+    var onClose: () -> Void
+
+    private static let columnWidth: CGFloat = 460
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 34, style: .continuous)
+        Group {
+            if meetings.count == 1, let meeting = meetings.first {
+                MeetingDetail(meeting: meeting, stacked: false, onJoin: { onJoin(meeting) },
+                              onOpenCalendar: { onOpenCalendar(meeting) }, onClose: onClose)
+                    .padding(44)
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label("\(meetings.count) meetings at the same time", systemImage: "rectangle.stack")
+                        .font(.voila(13, .semibold))
+                        .foregroundStyle(Theme.accent)
+                    // Side by side, so both are readable at a glance; a fourth one scrolls sideways.
+                    ScrollView(.horizontal) {
+                        HStack(alignment: .top, spacing: 14) {
+                            ForEach(meetings, id: \.occurrenceKey) { meeting in
+                                MeetingDetail(meeting: meeting, stacked: true, onJoin: { onJoin(meeting) },
+                                              onOpenCalendar: { onOpenCalendar(meeting) }, onClose: onClose)
+                                    .padding(24)
+                                    .frame(width: Self.columnWidth)
+                                    .frame(maxHeight: .infinity, alignment: .top)
+                                    .background(Theme.surface.opacity(0.55),
+                                                in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .strokeBorder(.primary.opacity(0.08)))
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)   // columns share the tallest one's height
+                    }
+                    .scrollIndicators(meetings.count > 3 ? .automatic : .never)
+                    .frame(width: CGFloat(min(meetings.count, 3)) * (Self.columnWidth + 14) - 14)
+                    HStack {
+                        MeetingDetail.closeButton(onClose)
+                        Spacer()
+                    }
+                }
+                .padding(32)
+            }
+        }
+        .font(.voila(14))
+        .background(Theme.background, in: shape)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(.primary.opacity(0.12), lineWidth: 1))
+    }
+}
+
+/// One meeting: what it is, who is coming, what it is about, and a Join button.
+/// Airy, with regular-size text: people on the left, topics on the right.
+/// `stacked`: one of several in the same card, so a single narrow column, and Close is shared below.
+private struct MeetingDetail: View {
     var meeting: Meeting
+    var stacked: Bool
     var onJoin: () -> Void
     var onOpenCalendar: () -> Void
     var onClose: () -> Void
 
+    private var hasTopics: Bool { !meeting.topics.isEmpty || !meeting.attachments.isEmpty }
+
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous)
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: stacked ? 18 : 30) {
             header
-            people
-            if !meeting.topics.isEmpty || !meeting.attachments.isEmpty { topics }
+            // On its own: people beside topics. Sharing the card: one narrow column each.
+            let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 18))
+                                 : AnyLayout(HStackLayout(alignment: .top, spacing: 36))
+            layout {
+                people.frame(maxWidth: .infinity, alignment: .topLeading)
+                if hasTopics { topics.frame(maxWidth: .infinity, alignment: .topLeading) }
+            }
+            .frame(minHeight: stacked ? 0 : 220, alignment: .top)
+            if stacked { Spacer(minLength: 0) }   // Join buttons line up at the bottom
             buttons
         }
-        .padding(26)
-        .frame(width: 520, alignment: .leading)
-        .font(.voila(13))
-        .background(Theme.background, in: shape)
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(.primary.opacity(0.12), lineWidth: 1))
+        .frame(width: stacked ? nil : (hasTopics ? 792 : 552), alignment: .leading)
     }
 
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             TimelineView(.periodic(from: .now, by: 10)) { context in
                 let state = Self.state(of: meeting, at: context.date)
                 HStack(spacing: 7) {
                     if state.live { LiveDot(isRunning: true, size: 8).frame(width: 14, height: 14) }
                     Text(state.text)
-                        .font(.voila(12, .semibold))
+                        .font(.voila(13, .semibold))
                         .foregroundStyle(state.live ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
+                    Spacer()
+                    audienceBadge
                 }
             }
             Text(meeting.title)
-                .font(.voila(24, .bold))
-                .lineLimit(3)
+                .font(.voila(stacked ? 21 : 28, .bold))
+                .lineLimit(stacked ? 2 : 3)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
+            HStack(spacing: stacked ? 12 : 18) {
                 Label("\(meeting.timeRange) · \(DurationFormat.short(meeting.duration))", systemImage: "clock")
                 if let link = meeting.link, link.service != .other {
                     Label(link.service.rawValue, systemImage: "video")
@@ -144,8 +190,26 @@ struct MeetingCardView: View {
                     Label(location, systemImage: "mappin.and.ellipse").lineLimit(1)
                 }
             }
-            .font(.voila(12, .medium))
+            .font(.voila(13, .medium))
             .foregroundStyle(.secondary)
+        }
+    }
+
+    /// "Internal", or "External · northwind.com" in a warmer color so it stands out.
+    @ViewBuilder
+    private var audienceBadge: some View {
+        if let audience = meeting.audience {
+            let outside = audience == .outside
+            let domains = meeting.externalDomains.prefix(2).joined(separator: ", ")
+                + (meeting.externalDomains.count > 2 ? " +\(meeting.externalDomains.count - 2)" : "")
+            Label(outside && !domains.isEmpty ? "External · \(domains)" : audience.rawValue,
+                  systemImage: outside ? "globe" : "building.2")
+                .font(.voila(12, .semibold))
+                .foregroundStyle(outside ? Theme.tint : Color.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background((outside ? Theme.tint : Color.secondary).opacity(0.14), in: Capsule())
+                .help(outside ? "Some guests are outside your organization" : "Everyone is in your organization")
         }
     }
 
@@ -164,50 +228,53 @@ struct MeetingCardView: View {
     // MARK: People
 
     private var people: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
                 sectionTitle("People", count: meeting.attendees.isEmpty ? nil : meeting.attendees.count)
                 Spacer()
                 if let organizer = meeting.organizer {
                     Text("Organized by \(organizer)")
-                        .font(.voila(11))
+                        .font(.voila(12))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             if meeting.attendees.isEmpty {
                 Text("No guests on this event.").foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 16) {
                     group(.accepted, tint: Theme.done)
                     group(.tentative, tint: Theme.tint)
                     group(.declined, tint: Theme.overdue)
                     group(.needsAction, tint: .secondary)
                 }
-                .padding(12)
+                .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.primary.opacity(0.07)))
             }
         }
     }
 
+    /// "✓ Accepted 4" with the names underneath.
     @ViewBuilder
     private func group(_ response: Meeting.Response, tint: Color) -> some View {
         let members = meeting.attendees(response)
         if !members.isEmpty {
-            let shown = members.prefix(12).map(\.name).joined(separator: ", ")
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                HStack(spacing: 5) {
+            let shown = members.prefix(14).map(\.name).joined(separator: ", ")
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
                     Image(systemName: response.symbol).foregroundStyle(tint)
                     Text(response.title)
                     Text("\(members.count)").monospacedDigit().foregroundStyle(.tertiary)
                 }
-                .font(.voila(12, .semibold))
-                .frame(width: 112, alignment: .leading)
-                Text(members.count > 12 ? "\(shown) and \(members.count - 12) more" : shown)
-                    .font(.voila(12.5))
+                .font(.voila(13, .semibold))
+                Text(members.count > 14 ? "\(shown) and \(members.count - 14) more" : shown)
+                    .font(.voila(14))
+                    .lineSpacing(3)
                     .foregroundStyle(response == .declined ? .secondary : .primary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 23)
             }
         }
     }
@@ -215,28 +282,27 @@ struct MeetingCardView: View {
     // MARK: Topics
 
     private var topics: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             sectionTitle("Topics", count: nil)
             if !meeting.topics.isEmpty {
                 ScrollView {
                     Text(meeting.topics)
-                        .font(.voila(13))
-                        .lineSpacing(3)
+                        .font(.voila(14))
+                        .lineSpacing(5)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollIndicators(.automatic)
-                .frame(maxHeight: 170)
+                .frame(maxHeight: stacked ? 120 : 320)
                 .fixedSize(horizontal: false, vertical: true)
             }
             if !meeting.attachments.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(meeting.attachments.prefix(3), id: \.self) { title in
-                        Chip(text: title, systemImage: "paperclip", tint: Theme.tint2)
-                            .lineLimit(1)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(meeting.attachments.prefix(4), id: \.self) { title in
+                        Chip(text: title, systemImage: "paperclip", tint: Theme.tint2).lineLimit(1)
                     }
-                    if meeting.attachments.count > 3 {
-                        Chip(text: "+\(meeting.attachments.count - 3)")
+                    if meeting.attachments.count > 4 {
+                        Chip(text: "+\(meeting.attachments.count - 4)")
                     }
                 }
             }
@@ -248,7 +314,7 @@ struct MeetingCardView: View {
             Text(title)
             if let count { Text("\(count)").monospacedDigit().foregroundStyle(.tertiary) }
         }
-        .font(.voila(12, .semibold))
+        .font(.voila(13, .semibold))
         .foregroundStyle(.secondary)
     }
 
@@ -257,34 +323,27 @@ struct MeetingCardView: View {
     /// Drawn by hand rather than with system button styles: those look disabled while the
     /// card isn't the key window, which is exactly when it pops up.
     private var buttons: some View {
-        HStack(spacing: 10) {
-            Button(action: onClose) {
-                Text("Close")
-                    .font(.voila(14, .semibold))
-                    .frame(width: 110, height: 40)
-                    .background(.primary.opacity(0.08), in: Capsule())
-                    .contentShape(Capsule())
-            }
-            .keyboardShortcut(.cancelAction)
+        HStack(spacing: 12) {
+            if !stacked { Self.closeButton(onClose) }
 
             if let link = meeting.link {
                 Button(action: onJoin) {
                     Label(link.joinTitle, systemImage: "video.fill")
-                        .font(.voila(14, .bold))
+                        .font(.voila(15, .bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 40)
+                        .frame(height: 48)
                         .background(Theme.accent, in: Capsule())
                         .shadow(color: Theme.tint2.opacity(0.35), radius: 8, y: 3)
                         .contentShape(Capsule())
                 }
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(stacked ? nil : .defaultAction)   // Return joins only when there is no choice
             } else if meeting.calendarURL != nil {
                 Button(action: onOpenCalendar) {
                     Label("Open in Google Calendar", systemImage: "calendar")
-                        .font(.voila(14, .semibold))
+                        .font(.voila(15, .semibold))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 40)
+                        .frame(height: 48)
                         .background(.primary.opacity(0.08), in: Capsule())
                         .contentShape(Capsule())
                 }
@@ -294,6 +353,18 @@ struct MeetingCardView: View {
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
-        .padding(.top, 2)
+    }
+
+    static func closeButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("Close")
+                .font(.voila(15, .semibold))
+                .frame(width: 150, height: 48)
+                .background(.primary.opacity(0.08), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .keyboardShortcut(.cancelAction)
     }
 }
