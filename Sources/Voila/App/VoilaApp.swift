@@ -228,6 +228,35 @@ final class AppModel {
         }
     }
 
+    /// Meetings ▸ Other Time Zone…: any of the system's time zones, typed or picked from a list.
+    func chooseSecondTimeZone() {
+        let alert = NSAlert()
+        alert.messageText = "Second Time Zone"
+        alert.informativeText = "Type a city or pick a time zone from the list. It is shown next to your local time on the timeline and the meeting card."
+        let ids = TimeZone.knownTimeZoneIdentifiers.filter { $0.contains("/") }
+        let titles = ids.map { $0.replacingOccurrences(of: "_", with: " ") }
+        let box = NSComboBox(frame: NSRect(x: 0, y: 0, width: 300, height: 26))
+        box.addItems(withObjectValues: titles)
+        box.completes = true
+        box.numberOfVisibleItems = 12
+        box.placeholderString = "Europe/Paris"
+        box.stringValue = calendar.secondTimeZoneID?.replacingOccurrences(of: "_", with: " ") ?? ""
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = box
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let typed = box.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !typed.isEmpty else { calendar.setSecondTimeZone(nil); return }
+        // "Europe/Paris" as listed, or just the city ("paris", "new york").
+        let match = titles.firstIndex { $0.lowercased() == typed }
+            ?? titles.firstIndex { $0.lowercased().hasSuffix("/" + typed) }
+            ?? titles.firstIndex { $0.lowercased().contains(typed) }
+        guard let match else { NSSound.beep(); return }
+        calendar.setSecondTimeZone(ids[match])
+    }
+
     /// Meetings ▸ Internal Email Domains…: other domains whose guests count as colleagues.
     func editInternalDomains() {
         let alert = NSAlert()
@@ -477,6 +506,20 @@ struct MeetingSettingsMenu: View {
             Toggle("Show Declined Meetings", isOn: Binding(get: { calendar.showDeclined },
                                                            set: { calendar.setShow(.declined, $0) }))
             Divider()
+            Picker("Second Time Zone", selection: Binding(get: { calendar.secondTimeZoneID ?? "" },
+                                                          set: { calendar.setSecondTimeZone($0.isEmpty ? nil : $0) })) {
+                Text("None").tag("")
+                Divider()
+                ForEach(SecondTimeZone.choices, id: \.id) { choice in
+                    Text(SecondTimeZone.title(city: choice.city, id: choice.id)).tag(choice.id)
+                }
+                // A zone picked with "Other Time Zone…" that isn't in the list above.
+                if let id = calendar.secondTimeZoneID, !SecondTimeZone.choices.contains(where: { $0.id == id }) {
+                    Divider()
+                    Text(SecondTimeZone.title(city: SecondTimeZone.city(of: id), id: id)).tag(id)
+                }
+            }
+            Button("Other Time Zone…") { model.chooseSecondTimeZone() }
             Button(calendar.internalDomains.isEmpty ? "Internal Email Domains…"
                    : "Internal Email Domains (\(calendar.internalDomains.count))…") { model.editInternalDomains() }
             if model.auth.isSignedIn, !model.auth.hasDirectoryAccess {

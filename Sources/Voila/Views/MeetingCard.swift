@@ -160,15 +160,14 @@ struct MeetingCardView: View {
                     }
                     .scrollIndicators(meetings.count > 3 ? .automatic : .never)
                     .frame(width: CGFloat(min(meetings.count, 3)) * (Self.columnWidth + 14) - 14)
-                    HStack {
-                        MeetingDetail.closeButton(onClose)
-                        Spacer()
-                    }
                 }
                 .padding(32)
             }
         }
         .font(.voila(14))
+        .overlay(alignment: .topTrailing) {
+            MeetingDetail.closeButton(onClose).padding(meetings.count == 1 ? 14 : 12)
+        }
         .background(WindowDragArea())   // drag the card anywhere by its empty areas
         .background(Theme.background, in: shape)
         .clipShape(shape)
@@ -189,7 +188,7 @@ private struct MeetingDetail: View {
     @Environment(\.directory) private var directory
     @Environment(\.cardHeightLimit) private var cardHeightLimit
     /// Which text the right column shows when the meeting has both.
-    @State private var showsPrep = false
+    @State private var showsPrep = ProcessInfo.processInfo.environment["VOILA_DEMO_PREP"] == "1"
 
     private var hasTopics: Bool {
         !meeting.topics.isEmpty || !meeting.prepNotes.isEmpty || !meeting.attachments.isEmpty
@@ -237,6 +236,12 @@ private struct MeetingDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: stacked ? 12 : 18) {
                 Label("\(meeting.timeRange) · \(DurationFormat.short(meeting.duration))", systemImage: "clock")
+                if let zone = SecondTimeZone.current {
+                    // The same times in the second time zone of the Meetings settings.
+                    Label("\(SecondTimeZone.time(meeting.start, in: zone)) – \(SecondTimeZone.time(meeting.end, in: zone)) \(SecondTimeZone.short(zone, at: meeting.start))",
+                          systemImage: "globe")
+                        .lineLimit(1)
+                }
                 if let link = meeting.link, link.service != .other {
                     HStack(spacing: 5) {
                         ServiceIcon(service: link.service, size: 18, fallback: "video")
@@ -312,7 +317,15 @@ private struct MeetingDetail: View {
     /// What the screen leaves for the guest list once the title, the buttons and the margins
     /// (and, in a shared card, its own heading and Close row) are counted.
     private var peopleHeightLimit: CGFloat {
-        max(200, cardHeightLimit - (stacked ? 520 : 380))
+        max(200, cardHeightLimit - (stacked ? 450 : 380))
+    }
+
+    /// The notes get as much height as the screen leaves (the same room as the guest list, less
+    /// their own heading and the attachments), so a long prep brief isn't read through a slit.
+    private var notesHeightLimit: CGFloat {
+        if stacked { return 160 }
+        let attachments = meeting.attachments.isEmpty ? 0 : CGFloat(min(meeting.attachments.count, 4)) * 26 + 50
+        return max(240, peopleHeightLimit - 44 - attachments)
     }
 
     @ViewBuilder
@@ -460,7 +473,7 @@ private struct MeetingDetail: View {
                 .padding(.trailing, 10)
         }
         .scrollIndicators(.automatic)
-        .frame(maxHeight: stacked ? 120 : hasLongTopics ? 420 : 320)
+        .frame(maxHeight: notesHeightLimit)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -500,10 +513,11 @@ private struct MeetingDetail: View {
 
     /// Drawn by hand rather than with system button styles: those look disabled while the
     /// card isn't the key window, which is exactly when it pops up.
+    /// Join, or the way to the event in Google Calendar; nothing when the event has neither.
+    @ViewBuilder
     private var buttons: some View {
+      if meeting.link != nil || meeting.calendarURL != nil {
         HStack(spacing: 12) {
-            if !stacked { Self.closeButton(onClose) }
-
             if let link = meeting.link {
                 Button(action: onJoin) {
                     HStack(spacing: 8) {
@@ -529,25 +543,27 @@ private struct MeetingDetail: View {
                         .background(.primary.opacity(0.08), in: Capsule())
                         .contentShape(Capsule())
                 }
-            } else {
-                Spacer()
             }
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
+      }
     }
 
+    /// The cross in the card's top right corner (Esc does the same).
     static func closeButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text("Close")
-                .font(.voila(15, .semibold))
-                .frame(width: 150, height: 48)
-                .background(.primary.opacity(0.08), in: Capsule())
-                .contentShape(Capsule())
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .background(.primary.opacity(0.08), in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
         .keyboardShortcut(.cancelAction)
+        .help("Close")
     }
 }
 

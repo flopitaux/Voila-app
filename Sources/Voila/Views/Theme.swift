@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+/// Diagonal hatching, as Google Calendar draws a meeting you answered "Maybe" to.
+struct Stripes: View {
+    var color: Color
+    var spacing: CGFloat = 7
+
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            var x = -size.height
+            while x < size.width {
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += spacing
+            }
+            context.stroke(path, with: .color(color), lineWidth: 2)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 extension Meeting {
     /// The event's colour as Google Calendar shows it. Events without a colour of their own use
     /// the calendar's colour there; that isn't readable with the events-only permission, so

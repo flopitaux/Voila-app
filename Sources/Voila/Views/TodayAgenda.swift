@@ -11,6 +11,11 @@ struct TodayAgenda: View {
 
     private var showsToday: Bool { dayOffset == 0 }
 
+    /// Compact by default, so a full day of meetings doesn't push the tasks out of sight:
+    /// the meeting that is on and the next few. "Show all" lists the rest of the day.
+    @State private var expanded = false
+    private static let compactCount = 3
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
             content(now: context.date)
@@ -23,7 +28,8 @@ struct TodayAgenda: View {
         let day = Calendar.current.date(byAdding: .day, value: dayOffset, to: now) ?? now
         let meetings = calendar.meetings(on: day)
         VStack(spacing: 6) {
-            header(day: day, count: meetings.filter { !$0.isDeclined }.count)
+            // Today the count is what is left of the day.
+            header(day: day, count: meetings.filter { !$0.isDeclined && (!showsToday || $0.end > now) }.count)
 
             if !model.showsCalendar {
                 ConnectCalendarCard()
@@ -33,22 +39,54 @@ struct TodayAgenda: View {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.vertical, 12)
             } else if meetings.isEmpty {
                 note(emptyText(day), symbol: "sparkles", tint: .secondary)
-            } else if !showsToday {
-                ForEach(meetings, id: \.occurrenceKey) { MeetingRow(meeting: $0, now: now) }
             } else {
-                // The "now" line sits before the first meeting still to come (or after the last one),
-                // unless a meeting is on: its own row is highlighted instead.
-                let showsNow = calendar.current(at: now) == nil
-                let nextIndex = meetings.firstIndex { $0.start > now }
-                ForEach(Array(meetings.enumerated()), id: \.element.occurrenceKey) { index, meeting in
+                // Today, meetings that are over are left out (the menu bar timeline keeps them).
+                let remaining = showsToday ? meetings.filter { $0.end > now } : meetings
+                let shown = expanded ? remaining : compact(remaining, now: now)
+                // The "now" line sits before the first meeting still to come (or stands alone when
+                // the day is over), unless a meeting is on: its own row is highlighted instead.
+                let showsNow = showsToday && calendar.current(at: now) == nil
+                let nextIndex = shown.firstIndex { $0.start > now }
+                ForEach(Array(shown.enumerated()), id: \.element.occurrenceKey) { index, meeting in
                     if showsNow && index == nextIndex { NowLine(now: now, next: calendar.next(after: now)) }
                     MeetingRow(meeting: meeting, now: now)
                 }
                 if showsNow && nextIndex == nil { NowLine(now: now, next: nil) }
+                if remaining.count > compact(remaining, now: now).count {
+                    moreButton(hidden: remaining.count - shown.count)
+                }
             }
         }
         .padding(.bottom, 8)
         .animation(.smooth(duration: 0.25), value: dayOffset)
+        .animation(.smooth(duration: 0.25), value: expanded)
+        .onChange(of: dayOffset) { expanded = false }
+    }
+
+    /// What is on now, plus the next few to come.
+    private func compact(_ meetings: [Meeting], now: Date) -> [Meeting] {
+        let onNow = meetings.filter { $0.start <= now }
+        return onNow + meetings.filter { $0.start > now }.prefix(Self.compactCount)
+    }
+
+    /// "9 more ⌄" under the compact list, "Show less ⌃" under the full one.
+    private func moreButton(hidden: Int) -> some View {
+        Button { expanded.toggle() } label: {
+            HStack(spacing: 5) {
+                Text(expanded ? "Show less" : "\(hidden) more")
+                Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .bold))
+            }
+            .font(.voila(11, .semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .background(.primary.opacity(0.05), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .padding(.horizontal, 4)
+        .help(expanded ? "Show only what is next" : "Show the rest of the day's meetings")
     }
 
     private func header(day: Date, count: Int) -> some View {
@@ -247,13 +285,29 @@ private struct MeetingRow: View {
         .opacity(isPast || meeting.isDeclined ? 0.5 : 1)
         .background {
             let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            // Your reply shows in the row itself: a plain card when accepted, hatched for Maybe,
+            // an empty dashed outline when you haven't answered, dimmed and struck through when declined.
+            let unanswered = meeting.myResponse == .needsAction
+            let flat = isPast || meeting.isDeclined || unanswered
             shape
-                .fill(Theme.surface.opacity(isPast || meeting.isDeclined ? 0.6 : 1))
+                .fill(Theme.surface.opacity(unanswered ? 0.25 : flat ? 0.6 : 1))
+                .overlay {
+                    if meeting.myResponse == .tentative {
+                        Stripes(color: meeting.color.opacity(0.13)).clipShape(shape)
+                    }
+                }
                 .overlay(shape.fill(Theme.tint.opacity(isOngoing ? 0.14 : 0)))
                 .overlay(shape.fill(.primary.opacity(hovering ? 0.04 : 0)))
-                .overlay(shape.strokeBorder(isOngoing ? AnyShapeStyle(Theme.tint.opacity(0.45))
-                                                      : AnyShapeStyle(Theme.cardStroke)))
-                .shadow(color: .black.opacity(isPast || meeting.isDeclined ? 0 : 0.18), radius: 3, y: 1)
+                .overlay {
+                    if isOngoing {
+                        shape.strokeBorder(Theme.tint.opacity(0.45))
+                    } else if unanswered {
+                        shape.strokeBorder(meeting.color.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                    } else {
+                        shape.strokeBorder(Theme.cardStroke)
+                    }
+                }
+                .shadow(color: .black.opacity(flat ? 0 : 0.18), radius: 3, y: 1)
         }
         .contentShape(Rectangle())
         .onTapGesture { model.showMeeting(meeting) }

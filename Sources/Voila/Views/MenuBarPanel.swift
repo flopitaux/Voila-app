@@ -15,6 +15,7 @@ struct MenuBarPanel: View {
                     header(now: context.date, day: day)
                     if model.showsCalendar {
                         DayTimeline(meetings: model.calendar.meetings(on: day), now: context.date, day: day,
+                                    secondZone: model.calendar.secondTimeZone,
                                     onOpen: { meeting in dismiss(); model.showMeeting(meeting) },
                                     onJoin: { meeting in dismiss(); model.join(meeting) })
                             .id(dayOffset)   // a fresh scroll position for each day
@@ -184,13 +185,16 @@ struct DayTimeline: View {
     var now: Date
     /// The day drawn (any moment of it); today unless the user stepped to another day.
     var day: Date
+    /// A second column of hours in another time zone, left of the local one.
+    var secondZone: TimeZone? = nil
     var onOpen: (Meeting) -> Void
     var onJoin: (Meeting) -> Void
 
     private var isToday: Bool { Calendar.current.isDate(day, inSameDayAs: now) }
 
     private static let hourHeight: CGFloat = 50
-    private static let gutter: CGFloat = 44
+    private static let labelWidth: CGFloat = 36
+    private var gutter: CGFloat { secondZone == nil ? 44 : 44 + Self.labelWidth + 6 }
 
     /// A meeting with its column among the meetings it overlaps.
     private struct Slot: Identifiable {
@@ -249,13 +253,24 @@ struct DayTimeline: View {
     var body: some View {
         let hours = self.hours
         let height = CGFloat(hours.upperBound - hours.lowerBound) * Self.hourHeight
-        ScrollViewReader { proxy in
+        VStack(alignment: .leading, spacing: 2) {
+          if let secondZone {
+            // Which column is which: "CET  PST".
+            HStack(spacing: 6) {
+                Text(SecondTimeZone.short(secondZone, at: day)).frame(width: Self.labelWidth, alignment: .trailing)
+                Text(SecondTimeZone.short(.current, at: day)).frame(width: Self.labelWidth, alignment: .trailing)
+            }
+            .font(.voila(9, .semibold))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+          }
+          ScrollViewReader { proxy in
             ScrollView {
                 ZStack(alignment: .topLeading) {
                     grid(hours)
                     if isToday { nowLine(hours) }   // under the blocks: the meeting that is on is highlighted itself
                     GeometryReader { geo in
-                        let width = geo.size.width - Self.gutter
+                        let width = geo.size.width - gutter
                         ForEach(slots) { slot in
                             let top = y(slot.meeting.start, in: hours)
                             let blockHeight = max(18, y(slot.meeting.end, in: hours) - top - 2)
@@ -263,7 +278,7 @@ struct DayTimeline: View {
                             MeetingBlock(meeting: slot.meeting, now: now, height: blockHeight,
                                          onOpen: onOpen, onJoin: onJoin)
                                 .frame(width: columnWidth - 3, height: blockHeight)
-                                .offset(x: Self.gutter + CGFloat(slot.column) * columnWidth, y: top + 1)
+                                .offset(x: gutter + CGFloat(slot.column) * columnWidth, y: top + 1)
                         }
                     }
                 }
@@ -273,6 +288,7 @@ struct DayTimeline: View {
             .scrollIndicators(.never)
             .frame(height: min(height + 14, 520))
             .onAppear { if isToday { proxy.scrollTo("now", anchor: .center) } }
+          }
         }
     }
 
@@ -280,11 +296,18 @@ struct DayTimeline: View {
     private func grid(_ hours: ClosedRange<Int>) -> some View {
         ForEach(Array(hours), id: \.self) { hour in
             HStack(spacing: 6) {
+                if let secondZone {
+                    Text(label(hour, in: secondZone))
+                        .font(.voila(10))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .frame(width: Self.labelWidth, alignment: .trailing)
+                }
                 Text(label(hour))
                     .font(.voila(10, .medium))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(width: Self.gutter - 8, alignment: .trailing)
+                    .frame(width: Self.labelWidth, alignment: .trailing)
                 Rectangle().fill(Theme.cardStroke).frame(height: 1)
             }
             .frame(height: 12)
@@ -292,14 +315,14 @@ struct DayTimeline: View {
         }
     }
 
-    private func label(_ hour: Int) -> String {
+    private func label(_ hour: Int, in zone: TimeZone = .current) -> String {
         let date = Calendar.current.startOfDay(for: day).addingTimeInterval(TimeInterval(hour) * 3600)
-        return hour == 24 ? "" : date.formatted(date: .omitted, time: .shortened)
+        return hour == 24 ? "" : SecondTimeZone.time(date, in: zone)
     }
 
     private func nowLine(_ hours: ClosedRange<Int>) -> some View {
         HStack(spacing: 0) {
-            Spacer().frame(width: Self.gutter - 5)
+            Spacer().frame(width: gutter - 5)
             Circle().fill(Theme.overtime).frame(width: 8, height: 8)
             Rectangle().fill(Theme.overtime).frame(height: 1.5)
         }
@@ -369,10 +392,25 @@ private struct MeetingBlock: View {
             if isOngoing {
                 shape.fill(Theme.accent)
             } else {
-                shape.fill(Theme.surface)
-                    .overlay(shape.fill(tint.opacity(hovering ? 0.30 : 0.20)))
-                    .overlay(alignment: .leading) { Rectangle().fill(tint).frame(width: 3) }
-                    .clipShape(shape)
+                // Your reply, as in Google Calendar: filled when accepted, hatched for Maybe,
+                // only outlined when you haven't answered or declined.
+                switch meeting.myResponse {
+                case .accepted:
+                    shape.fill(Theme.surface)
+                        .overlay(shape.fill(tint.opacity(hovering ? 0.30 : 0.20)))
+                        .overlay(alignment: .leading) { Rectangle().fill(tint).frame(width: 3) }
+                        .clipShape(shape)
+                case .tentative:
+                    shape.fill(Theme.surface)
+                        .overlay(shape.fill(tint.opacity(hovering ? 0.16 : 0.08)))
+                        .overlay(Stripes(color: tint.opacity(0.28)))
+                        .overlay(alignment: .leading) { Rectangle().fill(tint).frame(width: 3) }
+                        .clipShape(shape)
+                case .needsAction, .declined:
+                    shape.fill(Theme.background)
+                        .overlay(shape.fill(tint.opacity(hovering ? 0.10 : 0)))
+                        .overlay(shape.inset(by: 1).strokeBorder(tint.opacity(meeting.isDeclined ? 0.6 : 1), lineWidth: 1.5))
+                }
             }
         }
         .overlay(shape.strokeBorder(Theme.background, lineWidth: 1))   // a gap between touching blocks

@@ -1,6 +1,48 @@
 import Foundation
 import Observation
 
+/// The optional second time zone of the Meetings settings.
+enum SecondTimeZone {
+    static let key = "secondTimeZone"
+
+    /// The zone as stored, for views that don't have the store at hand.
+    static var current: TimeZone? {
+        UserDefaults.standard.string(forKey: key).flatMap(TimeZone.init(identifier:))
+    }
+
+    /// The zones offered in the menu, west to east.
+    static let choices: [(city: String, id: String)] = [
+        ("Honolulu", "Pacific/Honolulu"), ("Los Angeles", "America/Los_Angeles"), ("Denver", "America/Denver"),
+        ("Chicago", "America/Chicago"), ("New York", "America/New_York"), ("São Paulo", "America/Sao_Paulo"),
+        ("London", "Europe/London"), ("Paris", "Europe/Paris"), ("Tel Aviv", "Asia/Jerusalem"),
+        ("Dubai", "Asia/Dubai"), ("Bangalore", "Asia/Kolkata"), ("Singapore", "Asia/Singapore"),
+        ("Tokyo", "Asia/Tokyo"), ("Sydney", "Australia/Sydney"), ("Auckland", "Pacific/Auckland"),
+    ]
+
+    /// "America/Argentina/Buenos_Aires" → "Buenos Aires".
+    static func city(of id: String) -> String {
+        (id.split(separator: "/").last.map(String.init) ?? id).replacingOccurrences(of: "_", with: " ")
+    }
+
+    /// "Paris (GMT+1)".
+    static func title(city: String, id: String) -> String {
+        guard let zone = TimeZone(identifier: id) else { return city }
+        return "\(city) (\(zone.localizedName(for: .shortGeneric, locale: .current) ?? zone.identifier))"
+    }
+
+    /// "CET", "GMT+5:30"…
+    static func short(_ zone: TimeZone, at date: Date) -> String {
+        zone.abbreviation(for: date) ?? zone.identifier
+    }
+
+    /// "17:00" in that zone.
+    static func time(_ date: Date, in zone: TimeZone) -> String {
+        var style = Date.FormatStyle(date: .omitted, time: .shortened)
+        style.timeZone = zone
+        return date.formatted(style)
+    }
+}
+
 /// What the menu bar says about meetings.
 enum MeetingStatus: Equatable {
     /// A meeting is on: minutes until it ends.
@@ -65,6 +107,15 @@ final class CalendarStore {
         internalDomains = domains
         UserDefaults.standard.set(domains, forKey: "internalDomains")
         Task { await refresh() }
+    }
+
+    /// A second time zone shown next to the local one (timeline hours, card times); nil for none.
+    private(set) var secondTimeZoneID: String? = UserDefaults.standard.string(forKey: SecondTimeZone.key)
+    var secondTimeZone: TimeZone? { secondTimeZoneID.flatMap(TimeZone.init(identifier:)) }
+
+    func setSecondTimeZone(_ id: String?) {
+        secondTimeZoneID = id
+        UserDefaults.standard.set(id, forKey: SecondTimeZone.key)
     }
 
     func shows(_ response: Meeting.Response) -> Bool {
