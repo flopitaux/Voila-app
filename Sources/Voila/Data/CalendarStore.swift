@@ -9,14 +9,17 @@ enum MeetingStatus: Equatable {
     case upcoming(minutes: Int)
 }
 
-/// Today's (and tomorrow's) meetings from the primary Google Calendar.
+/// Meetings of today and the coming days from the primary Google Calendar.
 @MainActor
 @Observable
 final class CalendarStore {
     private let api: CalendarAPI
     private let auth: GoogleAuth
 
-    /// Timed meetings from the start of today to the end of tomorrow, by start time.
+    /// How many days after today are loaded, and can be browsed in the Today view.
+    static let daysAhead = 14
+
+    /// Timed meetings from the start of today to the end of the last loaded day, by start time.
     private(set) var meetings: [Meeting] = []
     private(set) var hasLoaded = false
     /// Shown inline in the Today view (background refreshes never raise a banner).
@@ -53,6 +56,15 @@ final class CalendarStore {
         case .accepted: break
         }
         onChange?()
+    }
+
+    /// Extra email domains counted as internal. Meetings are sorted again on the next load.
+    private(set) var internalDomains = Meeting.internalDomains
+
+    func setInternalDomains(_ domains: [String]) {
+        internalDomains = domains
+        UserDefaults.standard.set(domains, forKey: "internalDomains")
+        Task { await refresh() }
     }
 
     func shows(_ response: Meeting.Response) -> Bool {
@@ -143,7 +155,7 @@ final class CalendarStore {
         guard auth.isSignedIn, auth.hasCalendarAccess else { return }
         let cal = Calendar.current
         let from = cal.startOfDay(for: .now)
-        guard let to = cal.date(byAdding: .day, value: 2, to: from) else { return }
+        guard let to = cal.date(byAdding: .day, value: Self.daysAhead + 1, to: from) else { return }
         do {
             meetings = Self.mergingPrep(try await api.events(from: from, to: to).compactMap(Meeting.init))
             hasLoaded = true
@@ -269,6 +281,15 @@ final class CalendarStore {
                     link: MeetingLink(url: URL(string: "https://acme.zoom.us/j/93812345678?pwd=demo")!, service: .zoom),
                     attachments: [], calendarURL: nil, audience: .outside, externalDomains: ["contoso.com"]),
         ]
+        // A big one, to check that a long guest list scrolls inside the card.
+        let crowd: [(String, Meeting.Response)] = (1...44).map {
+            ("Guest Number\($0)", [.accepted, .tentative, .declined, .needsAction][$0 % 4])
+        }
+        meetings.append(Meeting(id: "t4", title: "Company offsite day", start: next(17), end: next(18),
+                                topics: "Bring your laptop. Lunch is provided.", location: "220 Montgomery St, San Francisco",
+                                organizer: "Maya Cohen", attendees: people(crowd + [("Hana Sato", .needsAction), ("Lena Fischer", .needsAction)]),
+                                myResponse: .accepted, link: nil, attachments: [], calendarURL: nil,
+                                audience: .outside, externalDomains: ["contoso.com"]))
         // Guests from the sample customers and partners are external.
         let outsiders: Set<String> = ["Lena Fischer", "Omar Haddad", "Hana Sato"]
         for m in meetings.indices {
@@ -276,6 +297,10 @@ final class CalendarStore {
                 meetings[m].attendees[a].isExternal = true
                 meetings[m].attendees[a].domain = meetings[m].externalDomains.first ?? "northwind.com"
             }
+        }
+        // A few events with a colour of their own, as set in Google Calendar.
+        for (id, color) in ["m3": "11", "m5": "2", "t2": "5", "t3": "3"] {
+            if let index = meetings.firstIndex(where: { $0.id == id }) { meetings[index].colorID = color }
         }
         meetings = Self.mergingPrep(meetings).sorted { $0.start < $1.start }
         hasLoaded = true

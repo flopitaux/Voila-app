@@ -73,6 +73,8 @@ struct Meeting: Identifiable, Hashable {
     var audience: Audience? = nil
     /// The other organizations in the meeting, for "External · northwind.com".
     var externalDomains: [String] = []
+    /// Google Calendar's colour for this event ("1"…"11"); nil when it uses the calendar's own.
+    var colorID: String? = nil
 
     /// Distinguishes a rescheduled meeting from its earlier slot.
     var occurrenceKey: String { "\(id)@\(Int(start.timeIntervalSince1970))" }
@@ -128,21 +130,42 @@ extension Meeting {
         }
         myResponse = attendees.first(where: \.isSelf)?.response ?? .accepted
         link = MeetingLink.find(in: event)
+        colorID = event.colorId
         attachments = (event.attachments ?? []).compactMap(\.title)
         calendarURL = event.htmlLink.flatMap(URL.init(string:)).flatMap { $0.isWebLink ? $0 : nil }
 
-        // Internal or external: compare the guests' email domains with the user's own.
+        // Internal or external: compare the guests' email domains with the user's own, and with
+        // the other domains the user counts as internal (Meetings settings).
+        let alsoInternal = Self.internalDomains
         let mine = attendees.first(where: \.isSelf)?.domain
             ?? (event.organizer?.isSelf == true ? Self.domain(of: event.organizer?.email) : nil)
         let others = attendees.filter { !$0.isSelf }.compactMap(\.domain)
         if let mine, !Self.personalDomains.contains(mine), !others.isEmpty {
             var seen = Set<String>()
-            externalDomains = others.filter { $0 != mine && seen.insert($0).inserted }
+            func isOutside(_ domain: String) -> Bool {
+                domain != mine && !alsoInternal.contains { HostMatch.matches(domain, $0) }
+            }
+            externalDomains = others.filter { isOutside($0) && seen.insert($0).inserted }
             for index in attendees.indices {
-                attendees[index].isExternal = attendees[index].domain.map { $0 != mine } ?? false
+                attendees[index].isExternal = attendees[index].domain.map(isOutside) ?? false
             }
             audience = externalDomains.isEmpty ? .inside : .outside
         }
+    }
+
+    /// Email domains counted as internal on top of the user's own (a sister company, a domain
+    /// kept after a merger…), as typed in the Meetings settings. Subdomains are included.
+    static var internalDomains: [String] {
+        UserDefaults.standard.stringArray(forKey: "internalDomains") ?? []
+    }
+
+    /// "@Mode.com, modeanalytics.com" → ["mode.com", "modeanalytics.com"].
+    static func parseDomains(_ text: String) -> [String] {
+        var seen = Set<String>()
+        return text.lowercased()
+            .components(separatedBy: CharacterSet(charactersIn: ",; \n\t"))
+            .map { String($0.split(separator: "@").last ?? "").trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+            .filter { $0.contains(".") && seen.insert($0).inserted }
     }
 
     /// With a personal address there is no "own organization" to compare with.

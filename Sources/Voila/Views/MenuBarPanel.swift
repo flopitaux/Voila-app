@@ -4,16 +4,20 @@ import SwiftUI
 struct MenuBarPanel: View {
     @Environment(AppModel.self) private var model
     @State private var window: NSWindow?
+    /// Days ahead of today on the timeline. Back to today every time the window closes.
+    @State private var dayOffset = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 VStack(alignment: .leading, spacing: 10) {
-                    header(now: context.date)
+                    let day = Calendar.current.date(byAdding: .day, value: dayOffset, to: context.date) ?? context.date
+                    header(now: context.date, day: day)
                     if model.showsCalendar {
-                        DayTimeline(meetings: model.calendar.meetings(on: context.date), now: context.date,
+                        DayTimeline(meetings: model.calendar.meetings(on: day), now: context.date, day: day,
                                     onOpen: { meeting in dismiss(); model.showMeeting(meeting) },
                                     onJoin: { meeting in dismiss(); model.join(meeting) })
+                            .id(dayOffset)   // a fresh scroll position for each day
                     } else {
                         Text("Connect Google Calendar from the Today view in the panel to see your day here.")
                             .font(.voila(12))
@@ -32,21 +36,60 @@ struct MenuBarPanel: View {
         .font(.voila(13))
         .background(Theme.background)
         .background(WindowReader { found in DispatchQueue.main.async { window = found } })
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            if let window, note.object as? NSWindow === window { dayOffset = 0 }
+        }
     }
 
-    /// "Fri, Nov 27" and what is next: "Customer demo in 12 min".
-    private func header(now: Date) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(now.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)))
+    /// "Friday, Nov 27", what is next ("Next in 12 min"), and the arrows to the other days.
+    private func header(now: Date, day: Date) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text(day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)))
                 .font(.voila(15, .bold))
-            Spacer()
+                .lineLimit(1)
+            Spacer(minLength: 4)
             if model.showsCalendar {
-                Text(summary(now: now))
+                Text(dayOffset == 0 ? summary(now: now) : summary(of: day))
                     .font(.voila(11, .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                HStack(spacing: 0) {
+                    stepButton("chevron.left", by: -1, help: "Previous day")
+                    if dayOffset != 0 {
+                        Button { dayOffset = 0 } label: {
+                            Text("Today")
+                                .font(.voila(11, .semibold))
+                                .foregroundStyle(Theme.tint2)
+                                .padding(.horizontal, 4)
+                                .frame(height: 20)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .pointerStyle(.link)
+                        .help("Back to today")
+                    }
+                    stepButton("chevron.right", by: 1, help: "Next day")
+                }
+                .padding(.horizontal, 2)
+                .background(.primary.opacity(0.07), in: Capsule())
             }
         }
+    }
+
+    private func stepButton(_ symbol: String, by step: Int, help: String) -> some View {
+        let target = dayOffset + step
+        let enabled = (0...CalendarStore.daysAhead).contains(target)
+        return Button { dayOffset = target } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(enabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(enabled ? .link : .default)
+        .disabled(!enabled)
+        .help(help)
     }
 
     private func summary(now: Date) -> String {
@@ -58,6 +101,12 @@ struct MenuBarPanel: View {
             return "Next in \(DurationFormat.short(max(60, next.start.timeIntervalSince(now))))"
         }
         return calendar.meetings(on: now).isEmpty ? "No meetings today" : "No more meetings today"
+    }
+
+    /// Another day: how many meetings you are expected at.
+    private func summary(of day: Date) -> String {
+        let count = model.calendar.meetings(on: day).filter { !$0.isDeclined }.count
+        return count == 0 ? "No meetings" : count == 1 ? "1 meeting" : "\(count) meetings"
     }
 
     private var footer: some View {
@@ -133,8 +182,12 @@ private struct WindowReader: NSViewRepresentable {
 struct DayTimeline: View {
     var meetings: [Meeting]
     var now: Date
+    /// The day drawn (any moment of it); today unless the user stepped to another day.
+    var day: Date
     var onOpen: (Meeting) -> Void
     var onJoin: (Meeting) -> Void
+
+    private var isToday: Bool { Calendar.current.isDate(day, inSameDayAs: now) }
 
     private static let hourHeight: CGFloat = 50
     private static let gutter: CGFloat = 44
@@ -157,9 +210,11 @@ struct DayTimeline: View {
             let endHour = cal.isDate(meeting.end, inSameDayAs: meeting.start) ? (end.hour ?? 0) + ((end.minute ?? 0) > 0 ? 1 : 0) : 24
             last = max(last, endHour)
         }
-        let nowHour = cal.component(.hour, from: now)
-        first = min(first, nowHour)
-        last = max(last, nowHour + 1)
+        if isToday {
+            let nowHour = cal.component(.hour, from: now)
+            first = min(first, nowHour)
+            last = max(last, nowHour + 1)
+        }
         return max(0, first)...min(24, last)
     }
 
@@ -185,7 +240,7 @@ struct DayTimeline: View {
     }
 
     private func y(_ date: Date, in hours: ClosedRange<Int>) -> CGFloat {
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        let startOfDay = Calendar.current.startOfDay(for: day)
         let hour = date.timeIntervalSince(startOfDay) / 3600
         return CGFloat(min(max(hour, Double(hours.lowerBound)), Double(hours.upperBound)) - Double(hours.lowerBound))
             * Self.hourHeight
@@ -198,7 +253,7 @@ struct DayTimeline: View {
             ScrollView {
                 ZStack(alignment: .topLeading) {
                     grid(hours)
-                    nowLine(hours)   // under the blocks: the meeting that is on is highlighted itself
+                    if isToday { nowLine(hours) }   // under the blocks: the meeting that is on is highlighted itself
                     GeometryReader { geo in
                         let width = geo.size.width - Self.gutter
                         ForEach(slots) { slot in
@@ -217,7 +272,7 @@ struct DayTimeline: View {
             }
             .scrollIndicators(.never)
             .frame(height: min(height + 14, 520))
-            .onAppear { proxy.scrollTo("now", anchor: .center) }
+            .onAppear { if isToday { proxy.scrollTo("now", anchor: .center) } }
         }
     }
 
@@ -238,7 +293,7 @@ struct DayTimeline: View {
     }
 
     private func label(_ hour: Int) -> String {
-        let date = Calendar.current.startOfDay(for: now).addingTimeInterval(TimeInterval(hour) * 3600)
+        let date = Calendar.current.startOfDay(for: day).addingTimeInterval(TimeInterval(hour) * 3600)
         return hour == 24 ? "" : date.formatted(date: .omitted, time: .shortened)
     }
 
@@ -255,7 +310,7 @@ struct DayTimeline: View {
     }
 }
 
-/// One meeting on the timeline. Lavender for internal, apricot for external, gradient when it is on.
+/// One meeting on the timeline, in its Google Calendar colour; gradient when it is on.
 private struct MeetingBlock: View {
     var meeting: Meeting
     var now: Date
@@ -266,7 +321,7 @@ private struct MeetingBlock: View {
 
     private var isOngoing: Bool { meeting.isOngoing(at: now) && !meeting.isDeclined }
     private var isPast: Bool { meeting.end <= now }
-    private var tint: Color { meeting.audience == .outside ? Theme.tint : Theme.tint2 }
+    private var tint: Color { meeting.color }
     private var canJoin: Bool {
         meeting.link != nil && !meeting.isDeclined && !isPast && meeting.start.timeIntervalSince(now) <= 10 * 60
     }

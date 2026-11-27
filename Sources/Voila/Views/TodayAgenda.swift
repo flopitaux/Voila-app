@@ -1,12 +1,15 @@
 import SwiftUI
 
-/// Today's (or tomorrow's) meetings in time order, shown above the task list in the Today view.
+/// The meetings of today, or of one of the coming days, in time order, shown above the task list
+/// in the Today view.
 struct TodayAgenda: View {
     @Environment(AppModel.self) private var model
-    /// Tomorrow is a peek: the view opens on today every time.
-    @State private var showsTomorrow: Bool
+    /// Days ahead of today. Other days are a peek: the view opens on today every time.
+    @State private var dayOffset: Int
 
-    init(startOnTomorrow: Bool = false) { _showsTomorrow = State(initialValue: startOnTomorrow) }
+    init(dayOffset: Int = 0) { _dayOffset = State(initialValue: dayOffset) }
+
+    private var showsToday: Bool { dayOffset == 0 }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 20)) { context in
@@ -17,7 +20,7 @@ struct TodayAgenda: View {
     @ViewBuilder
     private func content(now: Date) -> some View {
         let calendar = model.calendar
-        let day = showsTomorrow ? (Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now) : now
+        let day = Calendar.current.date(byAdding: .day, value: dayOffset, to: now) ?? now
         let meetings = calendar.meetings(on: day)
         VStack(spacing: 6) {
             header(day: day, count: meetings.filter { !$0.isDeclined }.count)
@@ -29,8 +32,8 @@ struct TodayAgenda: View {
             } else if !calendar.hasLoaded {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.vertical, 12)
             } else if meetings.isEmpty {
-                note(showsTomorrow ? "No meetings tomorrow" : "No meetings today", symbol: "sparkles", tint: .secondary)
-            } else if showsTomorrow {
+                note(emptyText(day), symbol: "sparkles", tint: .secondary)
+            } else if !showsToday {
                 ForEach(meetings, id: \.occurrenceKey) { MeetingRow(meeting: $0, now: now) }
             } else {
                 // The "now" line sits before the first meeting still to come (or after the last one),
@@ -45,7 +48,7 @@ struct TodayAgenda: View {
             }
         }
         .padding(.bottom, 8)
-        .animation(.smooth(duration: 0.25), value: showsTomorrow)
+        .animation(.smooth(duration: 0.25), value: dayOffset)
     }
 
     private func header(day: Date, count: Int) -> some View {
@@ -65,26 +68,50 @@ struct TodayAgenda: View {
         .padding(.top, 2)
     }
 
-    /// "Today | Tomorrow" pill.
+    private func emptyText(_ day: Date) -> String {
+        switch dayOffset {
+        case 0: "No meetings today"
+        case 1: "No meetings tomorrow"
+        default: "No meetings on \(day.formatted(.dateTime.weekday(.wide)))"
+        }
+    }
+
+    /// "‹ Today ›": step through the coming days, or jump back to today.
     private var dayPicker: some View {
         HStack(spacing: 2) {
-            ForEach([false, true], id: \.self) { tomorrow in
-                let selected = showsTomorrow == tomorrow
-                Button { showsTomorrow = tomorrow } label: {
-                    Text(tomorrow ? "Tomorrow" : "Today")
-                        .font(.voila(11, .semibold))
-                        .foregroundStyle(selected ? AnyShapeStyle(Theme.tint2) : AnyShapeStyle(.secondary))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3)
-                        .background(Theme.tint2.opacity(selected ? 0.18 : 0), in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .pointerStyle(.link)
+            stepButton("chevron.left", by: -1, help: "Previous day")
+            Button { dayOffset = 0 } label: {
+                Text("Today")
+                    .font(.voila(11, .semibold))
+                    .foregroundStyle(showsToday ? AnyShapeStyle(Theme.tint2) : AnyShapeStyle(.secondary))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(Theme.tint2.opacity(showsToday ? 0.18 : 0), in: Capsule())
+                    .contentShape(Capsule())
             }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .help("Back to today")
+            stepButton("chevron.right", by: 1, help: "Next day")
         }
         .padding(2)
         .background(.primary.opacity(0.05), in: Capsule())
+    }
+
+    private func stepButton(_ symbol: String, by step: Int, help: String) -> some View {
+        let target = dayOffset + step
+        let enabled = (0...CalendarStore.daysAhead).contains(target)
+        return Button { dayOffset = target } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(enabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+                .frame(width: 22, height: 20)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(enabled ? .link : .default)
+        .disabled(!enabled)
+        .help(help)
     }
 
     private func note(_ text: String, symbol: String, tint: Color) -> some View {
@@ -166,7 +193,7 @@ private struct MeetingRow: View {
             .frame(width: 58, alignment: .trailing)
 
             Capsule()
-                .fill(isOngoing ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.tint2.opacity(meeting.isDeclined ? 0.25 : 0.7)))
+                .fill(isOngoing ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(meeting.color.opacity(meeting.isDeclined ? 0.3 : 1)))
                 .frame(width: 3)
                 .padding(.vertical, 1)
 

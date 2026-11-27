@@ -49,14 +49,17 @@ final class MeetingCardController {
                                        self?.close()
                                    },
                                    onClose: { [weak self] in self?.close() })
-        let hosting = FirstClickHostingView(rootView: card.environment(\.directory, directory))
-        hosting.safeAreaRegions = []
-        panel.contentView = hosting
-
         // The monitor you're looking at: the one with the mouse pointer.
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        // The card is told how tall it may be, so a long guest list scrolls inside it
+        // instead of running under the buttons.
+        let hosting = FirstClickHostingView(rootView: card.environment(\.directory, directory)
+            .environment(\.cardHeightLimit, visible.height - 80))
+        hosting.safeAreaRegions = []
+        panel.contentView = hosting
         var size = hosting.fittingSize
         size.height = min(size.height, visible.height - 80)
         // Centered, a little above the middle.
@@ -112,6 +115,8 @@ final class MeetingCardController {
 extension EnvironmentValues {
     /// Where the card finds colleagues' job titles (nil: names only).
     @Entry var directory: DirectoryStore? = nil
+    /// The tallest the meeting card may be on its screen.
+    @Entry var cardHeightLimit: CGFloat = 820
 }
 
 /// The card window's content: one meeting in full, or several meetings that start together,
@@ -182,6 +187,7 @@ private struct MeetingDetail: View {
     var onClose: () -> Void
 
     @Environment(\.directory) private var directory
+    @Environment(\.cardHeightLimit) private var cardHeightLimit
     /// Which text the right column shows when the meeting has both.
     @State private var showsPrep = false
 
@@ -290,10 +296,30 @@ private struct MeetingDetail: View {
                         .lineLimit(1)
                 }
             }
-            let outside = meeting.attendees.filter(\.isExternal)
             if meeting.attendees.isEmpty {
                 Text("No guests on this event.").foregroundStyle(.secondary)
-            } else if outside.isEmpty {
+            } else {
+                // As tall as the guest list when the screen has room; otherwise it scrolls.
+                ViewThatFits(in: .vertical) {
+                    peopleBoxes
+                    ScrollView { peopleBoxes }
+                }
+                .frame(maxHeight: peopleHeightLimit, alignment: .top)
+            }
+        }
+    }
+
+    /// What the screen leaves for the guest list once the title, the buttons and the margins
+    /// (and, in a shared card, its own heading and Close row) are counted.
+    private var peopleHeightLimit: CGFloat {
+        max(200, cardHeightLimit - (stacked ? 520 : 380))
+    }
+
+    @ViewBuilder
+    private var peopleBoxes: some View {
+        let outside = meeting.attendees.filter(\.isExternal)
+        VStack(alignment: .leading, spacing: 14) {
+            if outside.isEmpty {
                 peopleBox(meeting.attendees, title: nil, symbol: nil, tint: .secondary,
                           withTitles: meeting.audience == .inside)
             } else {

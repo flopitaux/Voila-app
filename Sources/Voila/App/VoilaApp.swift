@@ -228,6 +228,23 @@ final class AppModel {
         }
     }
 
+    /// Meetings ▸ Internal Email Domains…: other domains whose guests count as colleagues.
+    func editInternalDomains() {
+        let alert = NSAlert()
+        alert.messageText = "Internal Email Domains"
+        alert.informativeText = "Guests from your own email domain are always internal. Add other domains that should count as internal too, separated by commas. Their subdomains are included."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.placeholderString = "example.com, example.org"
+        field.stringValue = calendar.internalDomains.joined(separator: ", ")
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        calendar.setInternalDomains(Meeting.parseDomains(field.stringValue))
+    }
+
     /// Opens the meeting card on request (a click in the Today view or the menu bar).
     func showMeeting(_ meeting: Meeting) {
         meetingCard.present([meeting], activate: true)
@@ -459,6 +476,9 @@ struct MeetingSettingsMenu: View {
                                                             set: { calendar.setShow(.tentative, $0) }))
             Toggle("Show Declined Meetings", isOn: Binding(get: { calendar.showDeclined },
                                                            set: { calendar.setShow(.declined, $0) }))
+            Divider()
+            Button(calendar.internalDomains.isEmpty ? "Internal Email Domains…"
+                   : "Internal Email Domains (\(calendar.internalDomains.count))…") { model.editInternalDomains() }
             if model.auth.isSignedIn, !model.auth.hasDirectoryAccess {
                 Divider()
                 // Connected before job titles existed (or the permission was unticked).

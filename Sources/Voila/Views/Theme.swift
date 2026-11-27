@@ -1,6 +1,32 @@
 import AppKit
 import SwiftUI
 
+extension Meeting {
+    /// The event's colour as Google Calendar shows it. Events without a colour of their own use
+    /// the calendar's colour there; that isn't readable with the events-only permission, so
+    /// they get Google's default calendar blue.
+    var color: Color {
+        func rgb(_ hex: UInt32) -> Color {
+            Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+                  blue: Double(hex & 0xFF) / 255)
+        }
+        switch colorID {
+        case "1": return rgb(0x7986CB)    // Lavender
+        case "2": return rgb(0x33B679)    // Sage
+        case "3": return rgb(0x8E24AA)    // Grape
+        case "4": return rgb(0xE67C73)    // Flamingo
+        case "5": return rgb(0xF6BF26)    // Banana
+        case "6": return rgb(0xF4511E)    // Tangerine
+        case "7": return rgb(0x039BE5)    // Peacock
+        case "8": return rgb(0x616161)    // Graphite
+        case "9": return rgb(0x3F51B5)    // Blueberry
+        case "10": return rgb(0x0B8043)   // Basil
+        case "11": return rgb(0xD50000)   // Tomato
+        default: return rgb(0x039BE5)     // the calendar's colour: Google's default (Peacock)
+        }
+    }
+}
+
 extension Font {
     /// Voilà's typeface: the macOS interface font (San Francisco), so the app matches the rest of
     /// the system. Weights are capped at bold so text stays refined (heavy weights look chunky).

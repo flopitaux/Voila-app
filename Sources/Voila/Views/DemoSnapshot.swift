@@ -32,7 +32,7 @@ enum DemoSnapshot {
             .joined(separator: "\n---\n")
         try? summary.write(toFile: folder + "/meetings.txt", atomically: true, encoding: .utf8)
         save(TodayAgenda().frame(width: 380).padding(8), "today.png")
-        save(TodayAgenda(startOnTomorrow: true).frame(width: 380).padding(8), "tomorrow.png")
+        save(TodayAgenda(dayOffset: 1).frame(width: 380).padding(8), "tomorrow.png")
         for meeting in model.calendar.meetings where meeting.hasGuests {
             save(MeetingCardView(meetings: [meeting], onJoin: { _ in }, onOpenCalendar: { _ in }, onClose: {}),
                  "card-\(meeting.id).png")

@@ -38,6 +38,7 @@ struct GEvent: Decodable {
     var location: String?
     var status: String?
     var eventType: String?
+    var colorId: String?   // "1"…"11" when the event has its own colour
     var htmlLink: String?
     var hangoutLink: String?
     var start: When?
