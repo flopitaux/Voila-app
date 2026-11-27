@@ -144,11 +144,14 @@ final class AppModel {
         refreshLoop = Task { [weak self] in
             await self?.calendar.refresh()
             await self?.store.bootstrap()
+            var minutes = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, self.auth.isSignedIn else { continue }
                 await self.store.refresh(reportingOffline: false)   // background poll: don't nag while offline
-                await self.calendar.refresh()
+                // Tasks sync every minute; the calendar changes less often: every 5 minutes.
+                minutes += 1
+                if minutes % 5 == 0 { await self.calendar.refresh() }
             }
         }
     }

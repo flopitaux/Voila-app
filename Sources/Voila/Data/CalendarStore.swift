@@ -207,7 +207,8 @@ final class CalendarStore {
                     attachments: ["Q4 strategy memo", "Roadmap – draft v3"], calendarURL: nil, audience: .inside),
             Meeting(id: "m3", title: "Customer demo: Northwind", start: at(58), end: at(118),
                     topics: "Walk through the retail dashboard, then questions.", location: nil, organizer: "You",
-                    attendees: people([("Lena Fischer", .accepted), ("Omar Haddad", .needsAction)]),
+                    attendees: people([("Arjun Patel", .accepted), ("Chloé Martin", .tentative), ("Lena Fischer", .accepted),
+                                       ("Omar Haddad", .needsAction)]),
                     myResponse: .accepted,
                     link: MeetingLink(url: URL(string: "https://teams.microsoft.com/l/meetup-join/demo")!, service: .teams),
                     attachments: [], calendarURL: nil, audience: .outside, externalDomains: ["northwind.com"]),
@@ -246,6 +247,13 @@ final class CalendarStore {
                     link: MeetingLink(url: URL(string: "https://acme.zoom.us/j/93812345678?pwd=demo")!, service: .zoom),
                     attachments: [], calendarURL: nil, audience: .outside, externalDomains: ["contoso.com"]),
         ]
+        // Guests from the sample customers and partners are external.
+        let outsiders: Set<String> = ["Lena Fischer", "Omar Haddad", "Hana Sato"]
+        for m in meetings.indices {
+            for a in meetings[m].attendees.indices where outsiders.contains(meetings[m].attendees[a].name) {
+                meetings[m].attendees[a].isExternal = true
+            }
+        }
         meetings = Self.mergingPrep(meetings).sorted { $0.start < $1.start }
         hasLoaded = true
     }

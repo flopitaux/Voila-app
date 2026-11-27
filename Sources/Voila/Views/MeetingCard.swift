@@ -239,27 +239,48 @@ private struct MeetingDetail: View {
                         .lineLimit(1)
                 }
             }
+            let outside = meeting.attendees.filter(\.isExternal)
             if meeting.attendees.isEmpty {
                 Text("No guests on this event.").foregroundStyle(.secondary)
+            } else if outside.isEmpty {
+                peopleBox(meeting.attendees, title: nil, symbol: nil, tint: .secondary)
             } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    group(.accepted, tint: Theme.done)
-                    group(.tentative, tint: Theme.tint)
-                    group(.declined, tint: Theme.overdue)
-                    group(.needsAction, tint: .secondary)
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+                // Mixed meeting: your colleagues first, then the guests from outside.
+                peopleBox(meeting.attendees.filter { !$0.isExternal }, title: "Internal", symbol: "building.2",
+                          tint: .secondary)
+                peopleBox(outside, title: "External · \(meeting.externalDomains.prefix(3).joined(separator: ", "))",
+                          symbol: "globe", tint: Theme.tint)
             }
         }
     }
 
+    /// One box of guests grouped by reply, optionally titled ("Internal 4").
+    private func peopleBox(_ members: [Meeting.Attendee], title: String?, symbol: String?, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let title {
+                HStack(spacing: 6) {
+                    if let symbol { Image(systemName: symbol) }
+                    Text(title).lineLimit(1)
+                    Text("\(members.count)").monospacedDigit().opacity(0.6)
+                }
+                .font(.voila(12, .semibold))
+                .foregroundStyle(tint)
+            }
+            group(.accepted, in: members, tint: Theme.done)
+            group(.tentative, in: members, tint: Theme.tint)
+            group(.declined, in: members, tint: Theme.overdue)
+            group(.needsAction, in: members, tint: .secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+    }
+
     /// "✓ Accepted 4" with the names underneath.
     @ViewBuilder
-    private func group(_ response: Meeting.Response, tint: Color) -> some View {
-        let members = meeting.attendees(response)
+    private func group(_ response: Meeting.Response, in all: [Meeting.Attendee], tint: Color) -> some View {
+        let members = all.filter { $0.response == response }
         if !members.isEmpty {
             let shown = members.prefix(14).map(\.name).joined(separator: ", ")
             VStack(alignment: .leading, spacing: 5) {

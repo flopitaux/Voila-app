@@ -30,6 +30,8 @@ struct Meeting: Identifiable, Hashable {
         var isSelf: Bool
         /// Email domain, lowercased ("acme.com").
         var domain: String? = nil
+        /// From another organization than the user's (false when that can't be told).
+        var isExternal = false
     }
 
     /// Whether every guest is from the user's own organization.
@@ -120,6 +122,9 @@ extension Meeting {
         if let mine, !Self.personalDomains.contains(mine), !others.isEmpty {
             var seen = Set<String>()
             externalDomains = others.filter { $0 != mine && seen.insert($0).inserted }
+            for index in attendees.indices {
+                attendees[index].isExternal = attendees[index].domain.map { $0 != mine } ?? false
+            }
             audience = externalDomains.isEmpty ? .inside : .outside
         }
     }
